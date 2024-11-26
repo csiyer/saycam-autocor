@@ -1,6 +1,6 @@
 """Functions to calculate autocorrelation measures on model embeddings"""
 
-import os
+import os, glob
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -231,3 +231,31 @@ def get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs):
         for i,dist_mat in enumerate(all_dist_mats)
     ]
     return all_ts
+
+
+if __name__ == "__main__":
+    N_JOBS = 8
+    MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
+    DOWNSAMPLED_FR = 3
+    OUTPUT_DIR = 'outputs'
+    DEVICE = 'cpu' # 'cpu' or 'cuda'
+
+    # Load embeddings if not already loaded
+    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*/*{MODEL_NAME}*.npy'))
+    all_embeddings = [np.load(e) for e in embeddings_paths]
+
+    # RAW AUTOCORRELATION
+    _ = run_plot_acf(all_embeddings, permute=True, n_jobs=N_JOBS, plot=True, save_folder=OUTPUT_DIR)
+    # n = 50000, nlags = 20000 
+
+    # PAIRWISE DISTANCES
+    consec_dist = get_consec_dists(all_embeddings, save_folder=OUTPUT_DIR, plot=True)
+
+    # FAMILIARITY/NOVELTY AUTOCORRELATION
+    for gap in [2, 8, 32, 128]:
+        familiarity_ts = get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs=N_JOBS)
+        _ = run_plot_acf(familiarity_ts,  n=None, nlags=None, permute=False, n_jobs=N_JOBS, plot=True, 
+                            save_folder=OUTPUT_DIR, save_tag = f'gap-{gap}')
+
+
+

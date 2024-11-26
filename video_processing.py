@@ -3,11 +3,9 @@
 import os, glob, cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from transformers import AutoImageProcessor, ResNetModel, ViTImageProcessor, ViTModel
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
 from joblib import Parallel, delayed
 
 
@@ -208,3 +206,25 @@ def plot_frames(images, titles=None):
         ax.axis('off')  # Hide axes for a cleaner look
     plt.tight_layout()
     plt.show()
+
+
+
+if __name__ == "__main__":
+    N_JOBS = 8
+    MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
+    DOWNSAMPLED_FR = 3
+    OUTPUT_DIR = 'outputs'
+    DEVICE = 'cpu' # 'cpu' or 'cuda'
+
+    # compute and save model embeddings of all frames in the test videos
+    video_paths = sorted(glob.glob('33*/*.mp4'))
+
+    save_folder = os.path.join(OUTPUT_DIR, 'video_embeddings')
+    
+    for i,video in enumerate(video_paths):
+        print(f'Beginning video {i+1} out of {len(video_paths)}')
+        embeddings = read_embed_video(video, n_frames=None, downsampled_frame_rate=DOWNSAMPLED_FR, preprocess=True, 
+                                    model_name=MODEL_NAME, save_folder=save_folder, n_jobs=N_JOBS, device=DEVICE)
+        
+        if save_folder:
+            print(f'Saving results to {save_folder}, shape: {embeddings.shape}')
