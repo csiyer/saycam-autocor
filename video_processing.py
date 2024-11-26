@@ -7,6 +7,7 @@ import seaborn as sns
 from transformers import AutoImageProcessor, ResNetModel, ViTImageProcessor, ViTModel
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 from joblib import Parallel, delayed
 
 
@@ -38,7 +39,7 @@ def preprocess_frame(frame, crop_dims):
     return frame
 
 
-def load_model(model_name):
+def load_model(model_name, device='cpu'):
     """Loads either resnet or ViT model and image processor from Hugging Face."""
     if model_name.lower() == 'vit':
         processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
@@ -48,31 +49,39 @@ def load_model(model_name):
         processor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
         model = ResNetModel.from_pretrained("microsoft/resnet-50")
 
-    model.eval()
+    model.eval().to(device)
     return model, processor
 
 
-def embed_frame_model(frame, model, processor, model_name):
+def model_transform_single_frame(frame, model, processor, model_name):
     with torch.no_grad():
         inputs = processor(images=frame, return_tensors="pt")
-        if model_name.lower() == 'vit':
-            # ***FOR THE ViT MODEL***
-            # the last hidden state is of shape (num_batches=1, num_patches incl class token, num_units=768)
-            # we just want the 'class token' representation, not image patches -- best proxy for a single representation
-            output = model(**inputs).last_hidden_state[:, 0, :]  # Shape: (1, 768)
-        
-        elif model_name.lower() == 'resnet':
-            # ***FOR THE RESNET MODEL***
-            # the last hidden state is of shape (num_batches, num_units=2048, 7,7 )
-            # Apply Global Average Pooling: Reduces (1, 2048, 7, 7) -> (1, 2048)
-            feature_map = model(**inputs).last_hidden_state
-            output = F.adaptive_avg_pool2d(feature_map, (1, 1)).squeeze(-1).squeeze(-1)
-            
+        hidden = model(**inputs).last_hidden_state
+    if model_name.lower() == 'vit':
+        # ***FOR THE ViT MODEL***
+        # the last hidden state is of shape (num_batches=1, num_patches incl class token, num_units=768)
+        # we just want the 'class token' representation, not image patches -- best proxy for a single representation
+        output = hidden[:, 0, :]  # Shape: (1, 768)
+    elif model_name.lower() == 'resnet':
+        # ***FOR THE RESNET MODEL***
+        # the last hidden state is of shape (num_batches, num_units=2048, 7,7 )
+        # Apply Global Average Pooling: Reduces (1, 2048, 7, 7) -> (1, 2048)
+        output = F.adaptive_avg_pool2d(hidden, (1, 1)).squeeze(-1).squeeze(-1)
     return output.squeeze(0).detach().cpu().numpy()
 
 
-def process_frame_batch(target_times, video_path, crop_dims, preprocess, model_name):
-    """HELPER FOR BELOW - Processes a batch of frames. Loads model for this chunk separately."""
+def load_and_embed_frames(target_times, video_path, crop_dims, preprocess, model_name):
+    """
+    Take a set of target times, open the video, crop/preprocess them and transform with model if necessary.
+    If model_name is None -> returns the frames themselves
+    Inputs:
+        - target_times: list or array of target timepoints of the frames to load
+        - video_path: path of the video to load
+        - crop_dims: passed to preprocess_frame to crop properly
+        - preprocess: bool to preprocess or not
+        - model_name: 'vit' or 'resnet' name of the model to use. If none -> returns the frames themselves 
+    Output: list of frames with preprocessing and/or model embedding performed to them
+    """
     if model_name: # ['vit','resnet']
         model, processor = load_model(model_name)
     cap = cv2.VideoCapture(video_path)
@@ -86,18 +95,55 @@ def process_frame_batch(target_times, video_path, crop_dims, preprocess, model_n
         if preprocess:
             frame = preprocess_frame(frame, crop_dims)
         if model_name:
-            frame = embed_frame_model(frame, model, processor, model_name)
+            frame = model_transform_single_frame(frame, model, processor, model_name)
         frames.append(frame)
 
     cap.release()
     return frames
 
 
+def load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name, n_jobs):
+    """Wrapper for above, with parallelization"""
+    if n_jobs == 1:
+        return load_and_embed_frames(target_times, video_path, crop_dims, preprocess, model_name)
+    else:
+        target_chunks = np.array_split(target_times, n_jobs)
+        frames = Parallel(n_jobs=n_jobs)(
+            delayed(load_and_embed_frames)(chunk_times, video_path, crop_dims, preprocess, model_name) # no model_name 
+            for chunk_times in target_chunks
+        )
+        return np.array([item for chunk in frames for item in chunk if item is not None])
+        
+
+############################ IF WE CAN USE GPU #############################
+def embed_frames_in_batches(frames, model_name, batch_size, device='cuda'):
+    """If video frames are loaded separately, we can pass them to the model (separately) on GPU"""
+    model, processor = load_model(model_name, device)
+    embeddings = []
+    for i in range(0, len(frames), batch_size):
+        batch = frames[i:i+batch_size]
+        inputs = processor(images=batch, return_tensors="pt").to(device, non_blocking=True)
+        
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        if model_name.lower() == 'vit':
+            batch_embeddings = outputs.last_hidden_state[:, 0, :]  # Class token embeddings
+        elif model_name.lower() == 'resnet':
+            batch_embeddings = F.adaptive_avg_pool2d(outputs.last_hidden_state, (1, 1)).squeeze(-1).squeeze(-1) # apply pooling across 7x7 channels
+
+        embeddings.append(batch_embeddings.cpu())  # Bring embeddings back to CPU for final storage
+
+    return torch.cat(embeddings).numpy()
+###########################################################################
+
+
+# main function
 def read_embed_video(video_path, n_frames=None, downsampled_frame_rate=None,
-                            preprocess=True, model_name=None, save_folder=None, n_jobs=4):
+                     preprocess=True, model_name=None, save_folder=None, n_jobs=1, device='cpu'):
     """
-    Reads a video, preprocesses frames, and optionally embeds them using the ViT model.
-    Parallelized with joblib.
+    Reads a video, preprocesses frames, and optionally embeds them using a model.
+    Dynamically adapts for CPU parallelization or GPU batch processing.
 
     Parameters:
         - video_path (string)
@@ -106,12 +152,12 @@ def read_embed_video(video_path, n_frames=None, downsampled_frame_rate=None,
         - preprocess (bool): Whether to preprocess frames.
         - model_name: if provided, transform frame to last hidden state of this model ['vit', 'resnet']
         - save_folder (str, optional): Folder to save output.
-        - n_jobs (int, optional): Number of parallel jobs to run.
+        - n_jobs (int, optional): Number of parallel jobs to run (CPU only).
+        - device (str): 'cpu' or 'cuda' to specify computation device.
 
     Returns:
         np.array of processed frames or embeddings.
     """
-
     cap = cv2.VideoCapture(video_path)
     original_frame_rate = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -128,15 +174,14 @@ def read_embed_video(video_path, n_frames=None, downsampled_frame_rate=None,
     crop_dims = get_cropping_dims(cap)
     cap.release()
 
-    # Split target times into chunks for each worker
-    target_chunks = np.array_split(target_times, n_jobs)
+    if model_name and device == 'cuda':
+        # Use batch processing on GPU. So, we'll load the videos first separately with no embedding
+        frames_preprocess_only = load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name=None, n_jobs=n_jobs) # no model_name 
+        # now, pass to the model on GPU
+        frames_out = embed_frames_in_batches(frames_preprocess_only, model_name, batch_size=32, device=device)
 
-    # Parallel processing using joblib with initializer for model/processor
-    processed_frames = Parallel(n_jobs=n_jobs)(
-        delayed(process_frame_batch)(chunk, video_path, crop_dims, preprocess, model_name)
-        for chunk in target_chunks
-    )
-    frames_array = np.array([item for chunk in processed_frames for item in chunk if item is not None])
+    else: # model_name is None and/or running on 'cpu'
+        frames_out = load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name, n_jobs) 
 
     # Save output if save_folder is provided
     if save_folder:
@@ -144,9 +189,9 @@ def read_embed_video(video_path, n_frames=None, downsampled_frame_rate=None,
         if model_name:
             save_path += '_' + model_name
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        np.save(save_path, frames_array)
+        np.save(save_path, frames_out)
 
-    return frames_array
+    return frames_out
 
 
 def plot_frames(images, titles=None):

@@ -89,7 +89,8 @@ def compute_acf_across_dims(embeddings, nlags, perm=None):
     return acf_ndim_perm.mean(axis=0)
 
 
-def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, plot=True, save_folder=None, title_add = ''):
+# main function
+def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, plot=True, save_folder=None, save_tag = ''):
     """
     Calculates autocorrelation of data and plots!
     Inputs:
@@ -108,12 +109,12 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, p
     
     if all_embeddings[0].shape[1] > 1:
         print('Computing autocorrelation of raw embeddings...')
-        plot_title = 'Autocorrelation of raw embeddings (averaged across units)' + title_add
-        save_tag = 'acf_raw'
+        plot_title = f'Autocorrelation of raw embeddings (averaged across units), ({save_tag})'
+        save_folder_addition = 'acf_raw'
     else:
         print('Computing autocorrelation of familiarity timeseries...')
-        plot_title = 'Autocorrelation of familiarity timeseries' + title_add
-        save_tag = 'acf_fn'
+        plot_title = f'Autocorrelation of familiarity timeseries, ({save_tag})' 
+        save_folder_addition = 'acf_fn'
         
     acfs_all = []
     acfs_perm_mu_se_all = []
@@ -144,9 +145,11 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, p
             acfs_perm_mu_se_all.append((acf_perm_mu, acf_perm_se))
 
     if save_folder:
-        acf_out_dir = os.path.join(save_folder, save_tag)
+        acf_out_dir = os.path.join(save_folder, save_folder_addition)
         os.makedirs(acf_out_dir, exist_ok=True)
         fpath = os.path.join(acf_out_dir, 'acfs_all')
+        if save_tag:
+            fpath += '_' + save_tag
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
