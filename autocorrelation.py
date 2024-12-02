@@ -90,7 +90,7 @@ def compute_acf_across_dims(embeddings, nlags, perm=None):
 
 
 # main function
-def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, plot=True, save_folder=None, save_tag = ''):
+def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, save_folder=None, save_tag = ''):
     """
     Calculates autocorrelation of data and plots!
     Inputs:
@@ -98,7 +98,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, p
                 For the familiarity-novelty timeseries, dims=1 -- still works!
         - n: number of timepoints to consider
         - nlags: lags of the autocorrelation function
-        - permute: compute a permuted null by shuffling and recomputing ACF
+        - permute_n_iter: compute a permuted null by shuffling and recomputing ACF 
         - n_jobs: number of jobs to parallelize across
         - bool to plot
         - save_folder: if provided, save outputs and plots there
@@ -131,12 +131,11 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, p
         acf = compute_acf_across_dims(embeddings, nlags)
         acfs_all.append(acf)
 
-        if permute:
+        if permute_n_iter > 0:
             # permute the embedding units and compute autocrrelation 
-            n_iter = 10
             acf_perm = np.array(
                 Parallel(n_jobs=n_jobs)(
-                    delayed(compute_acf_across_dims)(embeddings, nlags, perm=np.random.permutation(n)) for _ in range(n_iter)
+                    delayed(compute_acf_across_dims)(embeddings, nlags, perm=np.random.permutation(n)) for _ in range(permute_n_iter)
                 )
             )
             acf_perm_mu, acf_perm_se = compute_stats(acf_perm, axis=0)
@@ -158,7 +157,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, p
         for i,acf in enumerate(acfs_all):
             # Plot the ACF for the current array
             ax.plot(acf[1:]) 
-            if permute:
+            if permute_n_iter > 0:
                 # Plot the permuted null mean with shaded SE
                 acf_perm_mu, acf_perm_se = acfs_perm_mu_se_all[i]
                 ax.fill_between(range(len(acf_perm_mu)), 
@@ -170,7 +169,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute=False, n_jobs=1, p
         ax.set_ylabel('autocorrelation')
         ax.set_xscale('log')
         ax.set_yscale('log')
-        if permute: ax.legend()
+        if permute_n_iter > 0: ax.legend()
         sns.despine()
         f.tight_layout()
 
@@ -245,7 +244,7 @@ if __name__ == "__main__":
     all_embeddings = [np.load(e) for e in embeddings_paths]
 
     # RAW AUTOCORRELATION
-    _ = run_plot_acf(all_embeddings, permute=True, n_jobs=N_JOBS, plot=True, save_folder=OUTPUT_DIR)
+    _ = run_plot_acf(all_embeddings, permute_n_iter=10, n_jobs=N_JOBS, plot=True, save_folder=OUTPUT_DIR)
     # n = 50000, nlags = 20000 
 
     # PAIRWISE DISTANCES
@@ -254,7 +253,7 @@ if __name__ == "__main__":
     # FAMILIARITY/NOVELTY AUTOCORRELATION
     for gap in [2, 8, 32, 128]:
         familiarity_ts = get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs=N_JOBS)
-        _ = run_plot_acf(familiarity_ts,  n=None, nlags=None, permute=False, n_jobs=N_JOBS, plot=True, 
+        _ = run_plot_acf(familiarity_ts,  n=None, nlags=None, permute_n_iter=0, n_jobs=N_JOBS, plot=True, 
                             save_folder=OUTPUT_DIR, save_tag = f'gap-{gap}')
 
 
