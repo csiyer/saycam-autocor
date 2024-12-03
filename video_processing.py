@@ -1,6 +1,7 @@
 """functions for reading videos and embedding with transformer model"""
 
 import os, glob, cv2
+from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from transformers import AutoImageProcessor, ResNetModel, ViTImageProcessor, ViTModel
@@ -160,7 +161,7 @@ def read_embed_video(video_paths, n_frames=None, downsampled_frame_rate=None,
         video_paths = [video_paths] # if passed just one string
 
     ALL_OUTPUT_FRAMES = []
-    for video_path in video_paths:
+    for video_path in tqdm(video_paths):
 
         # first, open the video to get the video metadata we need (to calculate the crop, and the downsampled target times)
         cap = cv2.VideoCapture(video_path)
