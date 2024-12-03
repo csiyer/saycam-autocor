@@ -11,10 +11,10 @@ from joblib import Parallel, delayed
 from utils import compute_stats, pickle_load_dict, pickle_save_dict
 
 sns.set(style='white', palette='colorblind', context='talk')
-plt.rcParams['figure.dpi'] = 100
+plt.rcParams['figure.dpi'] = 200
 
 
-def get_consec_dists(all_embeddings, save_folder=None, plot=True):
+def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
     """ 
     gets consecutive distances between pairs of points
     works for either one embedding or a list of them
@@ -47,10 +47,11 @@ def get_consec_dists(all_embeddings, save_folder=None, plot=True):
         out_dir = os.path.join(save_folder, 'consec_dist')
         os.makedirs(out_dir, exist_ok=True)
         fpath = os.path.join(out_dir, 'consec_dist')
+        if save_tag: fpath += '-' + save_tag
         pickle_save_dict(consec_dist, fpath+'.pkl')
 
     if plot:
-        f, ax = plt.subplots(1, 1, figsize=(5, 4))
+        f, ax = plt.subplots(1, 1, figsize=(7, 4))
         f.suptitle('average pairwise Euclidean distance by gap')
         for i, (norms_mu, norms_se) in enumerate(zip(consec_dist['mu'], consec_dist['se'])):
             mu = list(norms_mu.values())
@@ -109,7 +110,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
     
     if all_embeddings[0].shape[1] > 1:
         print('Computing autocorrelation of raw embeddings...')
-        plot_title = f'Autocorrelation of raw embeddings (averaged across units), ({save_tag})'
+        plot_title = f'Autocorrelation of embeddings (avg across units), ({save_tag})'
         save_folder_addition = 'acf_raw'
     else:
         print('Computing autocorrelation of familiarity timeseries...')
@@ -147,8 +148,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         acf_out_dir = os.path.join(save_folder, save_folder_addition)
         os.makedirs(acf_out_dir, exist_ok=True)
         fpath = os.path.join(acf_out_dir, 'acfs_all')
-        if save_tag:
-            fpath += '_' + save_tag
+        if save_tag: fpath += '-' + save_tag
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:

@@ -50,7 +50,7 @@ def load_model(model_name, device='cpu'):
     model.eval().to(device)
     return model, processor
 
-
+############################ USE THESE 3 FUNCTIONS IF RUNNING ON CPU #############################
 def model_transform_single_frame(frame, model, processor, model_name):
     with torch.no_grad():
         inputs = processor(images=frame, return_tensors="pt")
@@ -132,64 +132,80 @@ def embed_frames_in_batches(frames, model_name, batch_size, device='cuda'):
 
         embeddings.append(batch_embeddings.cpu())  # Bring embeddings back to CPU for final storage
 
-    return torch.cat(embeddings).numpy()
+    return torch.cat(embeddings).cpu().numpy()
 ###########################################################################
 
 
 # main function
-def read_embed_video(video_path, n_frames=None, downsampled_frame_rate=None,
-                     preprocess=True, model_name=None, save_folder=None, n_jobs=1, device='cpu'):
+def read_embed_video(video_paths, n_frames=None, downsampled_frame_rate=None,
+                     preprocess=True, model_name=None, save_path=None, n_jobs=1, device='cpu'):
     """
     Reads a video, preprocesses frames, and optionally embeds them using a model.
     Dynamically adapts for CPU parallelization or GPU batch processing.
 
     Parameters:
-        - video_path (string)
+        - video_paths: list of videos to be concatenated. also works with just a single string.
         - n_frames (int, optional): Number of frames to load from the video.
         - downsampled_frame_rate (float, optional): Frame rate (Hz) for downsampling.
         - preprocess (bool): Whether to preprocess frames.
         - model_name: if provided, transform frame to last hidden state of this model ['vit', 'resnet']
-        - save_folder (str, optional): Folder to save output.
+        - save_path (str, optional): path to save output.
         - n_jobs (int, optional): Number of parallel jobs to run (CPU only).
         - device (str): 'cpu' or 'cuda' to specify computation device.
 
     Returns:
         np.array of processed frames or embeddings.
     """
-    cap = cv2.VideoCapture(video_path)
-    original_frame_rate = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    video_duration = total_frames / original_frame_rate
+    if not isinstance(video_paths, list):
+        video_paths = [video_paths] # if passed just one string
 
-    if downsampled_frame_rate:
-        target_times = np.arange(0, video_duration, 1 / downsampled_frame_rate)
-    else:
-        target_times = np.arange(total_frames) / original_frame_rate
+    ALL_OUTPUT_FRAMES = []
+    for video_path in video_paths:
 
-    if n_frames:
-        target_times = target_times[:n_frames]
+        # first, open the video to get the video metadata we need (to calculate the crop, and the downsampled target times)
+        cap = cv2.VideoCapture(video_path)
+        original_frame_rate = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_duration = total_frames / original_frame_rate
 
-    crop_dims = get_cropping_dims(cap)
-    cap.release()
+        if downsampled_frame_rate:
+            # sample target times evenly from the total video duration, we will then choose the next frame from each target time
+            target_times = np.arange(0, video_duration, 1 / downsampled_frame_rate)
+        else:
+            target_times = np.arange(total_frames) / original_frame_rate
 
-    if model_name and device == 'cuda':
-        # Use batch processing on GPU. So, we'll load the videos first separately with no embedding
-        frames_preprocess_only = load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name=None, n_jobs=n_jobs) # no model_name 
-        # now, pass to the model on GPU
-        frames_out = embed_frames_in_batches(frames_preprocess_only, model_name, batch_size=32, device=device)
+        if n_frames:
+            # if only returning n_frames, cut off the target times there
+            target_times = target_times[:n_frames]
 
-    else: # model_name is None and/or running on 'cpu'
-        frames_out = load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name, n_jobs) 
+        # get the parameters necessary to crop each from, passed to preprocess_frame()
+        crop_dims = get_cropping_dims(cap)
+        cap.release()
+
+        # next, if a model_name is provided, embed the frames of the video file (in parallel)
+        if model_name and device == 'cuda':
+            # Use batch processing on GPU. So, we'll load the videos first separately with no embedding (this is parallelized on CPU)
+            frames_preprocess_only = load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name=None, n_jobs=n_jobs) # no model_name 
+            # now, pass to the model on GPU
+            frames_out = embed_frames_in_batches(frames_preprocess_only, model_name, batch_size=32, device=device)
+
+        else: # model_name is None and/or running on 'cpu'
+            # if model_name not provided, this function will handle it
+            frames_out = load_and_embed_frames_parallel(target_times, video_path, crop_dims, preprocess, model_name, n_jobs)
+
+        # take all the frames from this video file and append to our full-video (directory) frames
+        # each element (frames_out) is a numpy array
+        ALL_OUTPUT_FRAMES.append(frames_out)
+    
+    ALL_OUTPUT_FRAMES = np.concatenate(ALL_OUTPUT_FRAMES, axis=0) # concatenate along time axis
 
     # Save output if save_folder is provided
-    if save_folder:
+    if save_path:
         save_path = os.path.join(save_folder, video_path[:-4])
-        if model_name:
-            save_path += '_' + model_name
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        np.save(save_path, frames_out)
+        # os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        np.save(save_path, ALL_OUTPUT_FRAMES)
 
-    return frames_out
+    return ALL_OUTPUT_FRAMES
 
 
 def plot_frames(images, titles=None):
