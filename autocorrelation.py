@@ -66,7 +66,7 @@ def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
 
         ax.set_xticks(range(len(gaps)))  # Adjust based on the length of `mu`
         # ax.set_xticklabels(gaps, rotation=90)  # Replace `gaps` with your labels if available
-        ax.set_xlabel('Sentence distance')
+        ax.set_xlabel('Video frame gap')
         ax.set_ylabel('Embedding distance')
         # ax.legend()
         sns.despine()
@@ -165,10 +165,19 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
                             acf_perm_mu + acf_perm_se, 
                             color='gray', alpha=0.2, zorder=-99, label=f'Permuted null' if i == 0 else None)
                 
+        # get the timepoints to label
+        frame_rate = 3
+        max_timepoint = (len(acfs_all[0]) - 1  ) / frame_rate # (seconds)
+        timepoints_to_label = [t for t in [1, 10, 60, 300, 600, 3600] if t <= max_timepoint] # 1s, 10s, 1m, 5m, 10m, 1hr
+        lag_indices_to_label = [int(t * frame_rate) for t in timepoints_to_label]
+
+        
         ax.set_xlabel('lag')
         ax.set_ylabel('autocorrelation')
         ax.set_xscale('log')
         ax.set_yscale('log')
+        ax.set_xticks(lag_indices_to_label)
+        ax.set_xticklabels([f'{t}s' if t < 60 else f'{int(t // 60)}m' if t < 3600 else f'{int(t // 3600)}h' for t in timepoints_to_label])
         if permute_n_iter > 0: ax.legend()
         sns.despine()
         f.tight_layout()
@@ -233,28 +242,32 @@ def get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs):
 
 
 if __name__ == "__main__":
-    N_JOBS = 8
-    MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
-    DOWNSAMPLED_FR = 3
+    INPUT_DIR = 'videos'
     OUTPUT_DIR = 'outputs'
+
+    DOWNSAMPLED_FR = 3
+    MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
     DEVICE = 'cpu' # 'cpu' or 'cuda'
+    N_JOBS = 8
+    PERMUTE_N_ITER = 10
 
     # Load embeddings if not already loaded
-    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*/*{MODEL_NAME}*.npy'))
+    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.npy'))
     all_embeddings = [np.load(e) for e in embeddings_paths]
 
     # RAW AUTOCORRELATION
-    _ = run_plot_acf(all_embeddings, permute_n_iter=10, n_jobs=N_JOBS, plot=True, save_folder=OUTPUT_DIR)
-    # n = 50000, nlags = 20000 
+    _ = run_plot_acf(all_embeddings, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 
+                 save_folder=OUTPUT_DIR, save_tag=MODEL_NAME)
+
 
     # PAIRWISE DISTANCES
-    consec_dist = get_consec_dists(all_embeddings, save_folder=OUTPUT_DIR, plot=True)
+    consec_dist = get_consec_dists(all_embeddings, plot=True, save_folder=OUTPUT_DIR, save_tag=MODEL_NAME)
 
     # FAMILIARITY/NOVELTY AUTOCORRELATION
     for gap in [2, 8, 32, 128]:
         familiarity_ts = get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs=N_JOBS)
-        _ = run_plot_acf(familiarity_ts,  n=None, nlags=None, permute_n_iter=0, n_jobs=N_JOBS, plot=True, 
-                            save_folder=OUTPUT_DIR, save_tag = f'gap-{gap}')
+        _ = run_plot_acf(familiarity_ts,  n=None, nlags=None, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, 
+                        plot=True, save_folder=OUTPUT_DIR, save_tag = f'{MODEL_NAME}-gap{gap}')
 
 
 
