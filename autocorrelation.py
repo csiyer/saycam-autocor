@@ -14,7 +14,7 @@ from utils import compute_stats, pickle_load_dict, pickle_save_dict, string_to_d
 
 sns.set(style='white', palette='colorblind', context='talk')
 plt.rcParams['figure.dpi'] = 200
-mpl.rcParams['agg.path.chunksize'] = 10000
+plt.rcParams['agg.path.chunksize'] = 10000
 
 
 def concatenate_embeddings_timestamps(embeddings, timestamps, downsampled_frame_rate=3):
