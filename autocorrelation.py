@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial import distance
+from sklearn.metrics.pairwise import pairwise_distances
 import statsmodels.api as sm
 from joblib import Parallel, delayed
 from utils import compute_stats, pickle_load_dict, pickle_save_dict, string_to_datetime, datetime_to_string
@@ -123,7 +124,8 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
 
 
 # main function
-def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
+def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, 
+                 plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
                  save_folder=None, save_tag = ''):
     """
     Calculates autocorrelation of data and plots!
@@ -224,14 +226,14 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
     return acfs_all, acfs_perm_mu_se_all
 
 
-def compute_dist_mats(all_embeddings,  n_jobs):
-    """Euclidean distance of each pair of timepoints"""
-    if n_jobs > 1 and len(all_embeddings) > 1:
-        return Parallel(n_jobs=n_jobs)(
-            delayed(lambda e: distance.squareform(distance.pdist(e, 'euclidean')))(e) for e in all_embeddings
-        )
-    else:
-        return [distance.squareform(distance.pdist(e, 'euclidean')) for e in all_embeddings]
+# def compute_dist_mats(all_embeddings,  n_jobs):
+#     """Euclidean distance of each pair of timepoints"""
+#     if n_jobs > 1 and len(all_embeddings) > 1:
+#         return Parallel(n_jobs=n_jobs)(
+#             delayed(lambda e: distance.squareform(distance.pdist(e, 'euclidean')))(e) for e in all_embeddings
+#         )
+#     else:
+#         return [distance.squareform(distance.pdist(e, 'euclidean')) for e in all_embeddings]
     
 
 def compute_percent_familiar(dist_mat, familiar_rad, window_start=None, window_end=None, n=None):
@@ -266,7 +268,10 @@ def get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs):
     if not isinstance(all_embeddings, list):
         all_embeddings = [all_embeddings]
 
-    all_dist_mats = compute_dist_mats(all_embeddings, n_jobs=n_jobs)
+    # this is very time consuming
+    all_dist_mats = [pairwise_distances(e, metric='nan_euclidean', n_jobs=n_jobs) for e in all_embeddings] # compute_dist_mats(all_embeddings, n_jobs=n_jobs)
+    # ^^ looking for a better way to do this but don't have one yet
+    
     all_ts = [ 
         compute_percent_familiar(dist_mat, 
                                  familiar_rad=consec_dist['mu'][i][gap], 
