@@ -179,11 +179,9 @@ def read_embed_video(video_folder_path, n_frames=None, downsampled_frame_rate=No
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         video_duration = total_frames / original_frame_rate
 
-        if downsampled_frame_rate:
-            # sample target times evenly from the total video duration, we will then choose the next frame from each target time
-            target_times = np.arange(0, video_duration, 1 / downsampled_frame_rate)
-        else:
-            target_times = np.arange(total_frames) / original_frame_rate
+        frame_rate = downsampled_frame_rate if downsampled_frame_rate else original_frame_rate
+        # sample target times evenly from the total video duration, we will then choose the next frame from each target time
+        target_times = np.arange(0, video_duration, 1 / frame_rate)
 
         if n_frames:
             # if only returning n_frames, cut off the target times there
@@ -215,7 +213,7 @@ def read_embed_video(video_folder_path, n_frames=None, downsampled_frame_rate=No
     start_idx = len(video_folder_path) - len(filename_only) + filename_only.find('_') # right after the first underscore (after last /) comes the date YYYYMMDD_HHMM
     video_start_time = string_to_datetime(video_folder_path[start_idx+1:start_idx+14], pattern="%Y%m%d_%H%M")
 
-    datetime_array = [video_start_time + timedelta(seconds=i / downsampled_frame_rate) for i in range(len(ALL_OUTPUT_FRAMES))]
+    datetime_array = [video_start_time + timedelta(seconds=i / frame_rate) for i in range(len(ALL_OUTPUT_FRAMES))]
     timestamp_array = np.array([datetime_to_string(t, truncate_digits=4) for t in datetime_array])
     ## ^^ this is now proper timestamps of each frame
 
