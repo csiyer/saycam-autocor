@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from transformers import AutoImageProcessor, ResNetModel, ViTImageProcessor, ViTModel
 import torch
 import torch.nn.functional as F
@@ -227,7 +228,7 @@ def read_embed_video(video_folder_path, n_frames=None, downsampled_frame_rate=No
     return ALL_OUTPUT_FRAMES, timestamp_array
 
 
-def plot_frames(images, titles=None):
+def plot_frames(images, titles=None, crop_dims=None):
     if not isinstance(images, list):
         images = [images]
     n = len(images)
@@ -236,6 +237,17 @@ def plot_frames(images, titles=None):
         axes = [axes]
     for i, ax in enumerate(axes):
         ax.imshow(images[i])
+
+        # Draw rectangle if crop_dims is provided
+        if i % 2 == 0 and crop_dims is not None:
+            rect = patches.Rectangle(
+                (crop_dims['start_x'], crop_dims['start_y']),  # Bottom-left corner
+                crop_dims['end_x'] - crop_dims['start_x'],    # Width
+                crop_dims['end_y'] - crop_dims['start_y'],    # Height
+                linewidth=2, edgecolor='red', facecolor='none', linestyle='--'
+            )
+            ax.add_patch(rect)
+
         if titles is not None:
             ax.set_title(titles[i])
         ax.axis('off')  # Hide axes for a cleaner look
