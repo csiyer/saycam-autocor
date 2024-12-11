@@ -126,7 +126,7 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
 
 # main function
 def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, 
-                 plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
+                 plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], plot_ylims=(None,None),
                  save_folder=None, save_tag = ''):
     """
     Calculates autocorrelation of data and plots!
@@ -213,6 +213,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         ax.set_ylabel('autocorrelation')
         ax.set_xscale('log')
         ax.set_yscale('log')
+        ax.set_ylim(bottom=plot_ylims[0], top=plot_ylims[1])
         ax.set_xticks(lag_indices_to_label)
         ax.set_xticklabels(plot_timepoints[:len(lag_indices_to_label)])
         if permute_n_iter > 0: ax.legend()
@@ -302,7 +303,7 @@ if __name__ == "__main__":
 
     # RAW AUTOCORRELATION
     _ = run_plot_acf(all_embeddings, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 
-                 save_folder=OUTPUT_DIR, save_tag=MODEL_NAME)
+                     plot_ylims=(1e-7,None), save_folder=OUTPUT_DIR, save_tag=MODEL_NAME)
 
 
     # PAIRWISE DISTANCES
