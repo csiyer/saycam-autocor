@@ -32,9 +32,23 @@ def compute_stats(arr, axis=0, n_se=2, use_se=True):
     (n-1)d array, (n-1)d array
         mean and se
     """
-    mu_ = np.mean(arr, axis=axis)
+    mu_ = np.nanmean(arr, axis=axis)
     if use_se:
-        er_ = sem(arr, axis=axis) * n_se
+        er_ = sem(arr, axis=axis, nan_policy='omit') * n_se
     else:
-        er_ = np.std(arr, axis=axis)
+        er_ = np.nanstd(arr, axis=axis)
     return mu_, er_
+
+
+#####  my own
+from datetime import datetime, timedelta
+
+# wrappers for datetime.strftime and strptime for our specific format
+
+def string_to_datetime(string, pattern = "%Y%m%d_%H%M_%S.%f"):
+    return datetime.strptime(string, pattern)
+
+def datetime_to_string(date, pattern ="%Y%m%d_%H%M_%S.%f", truncate_digits=None):
+    if truncate_digits:
+        return datetime.strftime(date, pattern)[:-truncate_digits]
+    return datetime.strftime(date, pattern)

@@ -1,6 +1,7 @@
 """Functions to calculate autocorrelation measures on model embeddings"""
 
 import os, glob
+from datetime import datetime, timedelta
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,16 +9,47 @@ import seaborn as sns
 from scipy.spatial import distance
 import statsmodels.api as sm
 from joblib import Parallel, delayed
-from utils import compute_stats, pickle_load_dict, pickle_save_dict
+from utils import compute_stats, pickle_load_dict, pickle_save_dict, string_to_datetime, datetime_to_string
 
 sns.set(style='white', palette='colorblind', context='talk')
 plt.rcParams['figure.dpi'] = 200
 
 
+def concatenate_embeddings_timestamps(embeddings, timestamps, downsampled_frame_rate=3):
+    """
+    Our goal is to concatenate embeddings by their timestamps, so that we have one continuous (true time)
+    array of embeddings, with NaNs filled in when we have no observations.
+    Inputs:
+        - embeddings: list or array of embeddings (timepointsxdims)
+        - timestamps: list or array of timestamps of each frame (YYYYMMDD_HHMM_SSS.S)
+        ^^ these two both match the format of the pickle dicts saved by read_embed_video
+    Output:
+        - embeddings: np.array (timepointsxdims)
+        - timestamps: np.array of timestamps of each frame
+    """
+    # our goal is to create a continuous timeline from the first frame to the last, and fill in embeddings where we have them
+    
+    min_time = string_to_datetime(timestamps[0][0]) # "%Y%m%d_%H%M_%S.%f"
+    max_time = string_to_datetime(timestamps[-1][-1])
+
+    evenly_spaced_timestamps = [min_time + timedelta(seconds=i / downsampled_frame_rate) 
+                                for i in range(int((max_time - min_time).total_seconds() * downsampled_frame_rate) + 1)]
+    ground_truth_timestamps = np.array([datetime_to_string(t, truncate_digits=4) for t in evenly_spaced_timestamps]) # convert back to strings
+    # this is now our 'ground truth' timeline
+
+    # now get a new embedding list with NaNs where we don't have a matching timestamp
+    timestamp_to_embedding_map = dict(zip(np.concatenate(timestamps), np.concatenate(embeddings))) # lookup
+    ground_truth_embeddings = np.array([
+        timestamp_to_embedding_map.get(t, np.full((768,), np.nan)) for t in ground_truth_timestamps
+    ])
+
+    return ground_truth_embeddings, ground_truth_timestamps
+
+
 def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
     """ 
     gets consecutive distances between pairs of points
-    works for either one embedding or a list of them
+    works for either one array of embeddings or a list of them
     """
     if not type(all_embeddings) == list:
         all_embeddings = [all_embeddings]
@@ -80,18 +112,19 @@ def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
     return consec_dist
 
 
-def compute_acf_across_dims(embeddings, nlags, perm=None):
+def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'):
     if len(embeddings.shape) < 2:
         embeddings = embeddings[:,np.newaxis]
     dim = embeddings.shape[1]
     if perm is not None:
         embeddings = embeddings[perm]
-    acf_ndim_perm = np.array([sm.tsa.acf(embeddings[:, d], nlags=nlags) for d in range(dim)])
+    acf_ndim_perm = np.array([sm.tsa.acf(embeddings[:, d], nlags=nlags, missing=missing) for d in range(dim)])
     return acf_ndim_perm.mean(axis=0)
 
 
 # main function
-def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, save_folder=None, save_tag = ''):
+def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
+                 save_folder=None, save_tag = ''):
     """
     Calculates autocorrelation of data and plots!
     Inputs:
@@ -102,15 +135,16 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         - permute_n_iter: compute a permuted null by shuffling and recomputing ACF 
         - n_jobs: number of jobs to parallelize across
         - bool to plot
+        - plot_timepoints are desired timepoints to show on the plot 
         - save_folder: if provided, save outputs and plots there
     This works for both the raw data and familiarity timeseries
     """
     if not type(all_embeddings) == list:
-        all_embeddings = [all_embeddings] # make this compatible with a single continuous embeddings file
+        all_embeddings = [all_embeddings] # make this compatible with a single continuous embeddings file or list of files
     
     if all_embeddings[0].shape[1] > 1:
         print('Computing autocorrelation of raw embeddings...')
-        plot_title = f'Autocorrelation of embeddings (avg across units), ({save_tag})'
+        plot_title = f'Autocorrelation of embeddings, (avg across units; {save_tag})'
         save_folder_addition = 'acf_raw'
     else:
         print('Computing autocorrelation of familiarity timeseries...')
@@ -166,18 +200,18 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
                             color='gray', alpha=0.2, zorder=-99, label=f'Permuted null' if i == 0 else None)
                 
         # get the timepoints to label
+        # we could've used the timepoints directly to get this, but honestly this was just easier and it doesn't matter if its a couple frames off
+        plot_timepoints_in_seconds = [int(t[:-1]) if 's' in t else int(t[:-1])*60 if 'm' in t else int(t[:-1])*3600 if 'h' in t else int(t[:-1])*86400 if 'd' in t else 0 for t in plot_timepoints]
         frame_rate = 3
-        max_timepoint = (len(acfs_all[0]) - 1  ) / frame_rate # (seconds)
-        timepoints_to_label = [t for t in [1, 10, 60, 300, 600, 3600] if t <= max_timepoint] # 1s, 10s, 1m, 5m, 10m, 1hr
-        lag_indices_to_label = [int(t * frame_rate) for t in timepoints_to_label]
+        max_timepoint = (len(acfs_all[0]) - 1) / frame_rate # (seconds) 
+        lag_indices_to_label = [int(t * frame_rate) for t in plot_timepoints_in_seconds if t < max_timepoint]
 
-        
         ax.set_xlabel('lag')
         ax.set_ylabel('autocorrelation')
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.set_xticks(lag_indices_to_label)
-        ax.set_xticklabels([f'{t}s' if t < 60 else f'{int(t // 60)}m' if t < 3600 else f'{int(t // 3600)}h' for t in timepoints_to_label])
+        ax.set_xticklabels(plot_timepoints[:len(lag_indices_to_label)])
         if permute_n_iter > 0: ax.legend()
         sns.despine()
         f.tight_layout()
@@ -192,7 +226,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
 
 def compute_dist_mats(all_embeddings,  n_jobs):
     """Euclidean distance of each pair of timepoints"""
-    if n_jobs > 1:
+    if n_jobs > 1 and len(all_embeddings) > 1:
         return Parallel(n_jobs=n_jobs)(
             delayed(lambda e: distance.squareform(distance.pdist(e, 'euclidean')))(e) for e in all_embeddings
         )
@@ -229,8 +263,10 @@ def get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs):
     For each embedding, get the "familiarity-novelty" timeseries, operationalized above.
     Timepoints are counted as familiar if they are beyond a `familiarity_radius` from the previoius (excluding a `gap`). 
     """
-    all_dist_mats = compute_dist_mats(all_embeddings, n_jobs=n_jobs)
+    if not isinstance(all_embeddings, list):
+        all_embeddings = [all_embeddings]
 
+    all_dist_mats = compute_dist_mats(all_embeddings, n_jobs=n_jobs)
     all_ts = [ 
         compute_percent_familiar(dist_mat, 
                                  familiar_rad=consec_dist['mu'][i][gap], 
@@ -252,8 +288,11 @@ if __name__ == "__main__":
     PERMUTE_N_ITER = 10
 
     # Load embeddings if not already loaded
-    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.npy'))
-    all_embeddings = [np.load(e) for e in embeddings_paths]
+    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
+    all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
+    all_embeddings, _ = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
+                                                          [d['timestamps'] for d in all_dicts],
+                                                          downsampled_frame_rate=DOWNSAMPLED_FR)
 
     # RAW AUTOCORRELATION
     _ = run_plot_acf(all_embeddings, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 

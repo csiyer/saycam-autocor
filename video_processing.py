@@ -1,6 +1,7 @@
 """functions for reading videos and embedding with transformer model"""
 
 import os, glob, cv2
+from datetime import datetime, timedelta
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +9,7 @@ from transformers import AutoImageProcessor, ResNetModel, ViTImageProcessor, ViT
 import torch
 import torch.nn.functional as F
 from joblib import Parallel, delayed
+from utils import pickle_save_dict, datetime_to_string, string_to_datetime
 
 
 def get_cropping_dims(cap, square_len=420, vertical_offset=30):
@@ -138,27 +140,35 @@ def embed_frames_in_batches(frames, model_name, batch_size, device='cuda'):
 
 
 # main function
-def read_embed_video(video_paths, n_frames=None, downsampled_frame_rate=None,
-                     preprocess=True, model_name=None, save_path=None, n_jobs=1, device='cpu'):
+def read_embed_video(video_folder_path, n_frames=None, downsampled_frame_rate=None,
+                     preprocess=True, model_name=None, save_folder=None, n_jobs=1, device='cpu'):
     """
     Reads a video, preprocesses frames, and optionally embeds them using a model.
     Dynamically adapts for CPU parallelization or GPU batch processing.
 
     Parameters:
+        - video_folder_path: string, path to either single video to be embedded or folder of videos
         - video_paths: list of videos to be concatenated. also works with just a single string.
         - n_frames (int, optional): Number of frames to load from the video.
         - downsampled_frame_rate (float, optional): Frame rate (Hz) for downsampling.
         - preprocess (bool): Whether to preprocess frames.
         - model_name: if provided, transform frame to last hidden state of this model ['vit', 'resnet']
-        - save_path (str, optional): path to save output.
+        - save_folder (str, optional): path to save output.
         - n_jobs (int, optional): Number of parallel jobs to run (CPU only).
         - device (str): 'cpu' or 'cuda' to specify computation device.
 
     Returns:
         np.array of processed frames or embeddings.
     """
-    if not isinstance(video_paths, list):
-        video_paths = [video_paths] # if passed just one string
+    # check input video path string
+    if os.path.isdir(video_folder_path): # directory
+        video_paths = [os.path.join(video_folder_path, f) for f in sorted(os.listdir(video_folder_path)) if f.endswith('.mp4')]
+    elif video_folder_path.endswith('.mp4'): # single video file
+        video_paths = [video_folder_path]
+        video_folder_path = video_folder_path[:-4] # take off .mp4 tag
+    else:
+        print('Unrecognized input string.')
+        return
 
     ALL_OUTPUT_FRAMES = []
     for video_path in tqdm(video_paths):
@@ -200,13 +210,22 @@ def read_embed_video(video_paths, n_frames=None, downsampled_frame_rate=None,
     
     ALL_OUTPUT_FRAMES = np.concatenate(ALL_OUTPUT_FRAMES, axis=0) # concatenate along time axis
 
-    # Save output if save_folder is provided
-    if save_path:
-        save_path = os.path.join(save_folder, video_path[:-4])
-        # os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        np.save(save_path, ALL_OUTPUT_FRAMES)
+    #### get timepoints of each frame
+    filename_only = video_folder_path[video_folder_path.rfind('/')+1:]
+    start_idx = len(video_folder_path) - len(filename_only) + filename_only.find('_') # right after the first underscore (after last /) comes the date YYYYMMDD_HHMM
+    video_start_time = string_to_datetime(video_folder_path[start_idx+1:start_idx+14], pattern="%Y%m%d_%H%M")
 
-    return ALL_OUTPUT_FRAMES
+    datetime_array = [video_start_time + timedelta(seconds=i / downsampled_frame_rate) for i in range(len(ALL_OUTPUT_FRAMES))]
+    timestamp_array = np.array([datetime_to_string(t, truncate_digits=4) for t in datetime_array])
+    ## ^^ this is now proper timestamps of each frame
+
+    # Save output if save_folder is provided
+    if save_folder:
+        output_dict = {'embeddings': ALL_OUTPUT_FRAMES, 'timestamps': timestamp_array}
+        save_path = os.path.join(save_folder, video_folder_path.split('/')[-1]) + f'-{MODEL_NAME}.pkl'
+        pickle_save_dict(output_dict, save_path)
+
+    return ALL_OUTPUT_FRAMES, timestamp_array
 
 
 def plot_frames(images, titles=None):
@@ -227,21 +246,32 @@ def plot_frames(images, titles=None):
 
 
 if __name__ == "__main__":
-    N_JOBS = 8
-    MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
-    DOWNSAMPLED_FR = 3
+    INPUT_DIR = 'videos'
     OUTPUT_DIR = 'outputs'
-    DEVICE = 'cpu' # 'cpu' or 'cuda'
 
-    # compute and save model embeddings of all frames in the test videos
-    video_paths = sorted(glob.glob('33*/*.mp4'))
+    DOWNSAMPLED_FR = 3
+    MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
+    DEVICE = 'cpu' # 'cpu' or 'cuda'
+    N_JOBS = 8
 
     save_folder = os.path.join(OUTPUT_DIR, 'video_embeddings')
-    
-    for i,video in enumerate(video_paths):
-        print(f'Beginning video {i+1} out of {len(video_paths)}')
-        embeddings = read_embed_video(video, n_frames=None, downsampled_frame_rate=DOWNSAMPLED_FR, preprocess=True, 
-                                    model_name=MODEL_NAME, save_folder=save_folder, n_jobs=N_JOBS, device=DEVICE)
+
+    for i,subfolder in enumerate(os.listdir(INPUT_DIR)):
+        subfolder_path = os.path.join(INPUT_DIR, subfolder)
+
+        # each subfolder corresponds to one "video" with multiple video files within to be concatenated
+        if os.path.isdir(subfolder_path):
+            print(f'Beginning video {i+1} out of {len(os.listdir(INPUT_DIR))}')
+
+            embeddings = read_embed_video(subfolder_path, 
+                                        n_frames=None, 
+                                        downsampled_frame_rate=DOWNSAMPLED_FR, 
+                                        preprocess=True, 
+                                        model_name=MODEL_NAME, 
+                                        save_folder = save_folder, 
+                                        n_jobs=N_JOBS, 
+                                        evice=DEVICE)
+            
+            if save_folder:
+                print(f'Saved results to {save_folder}, shape: {embeddings.shape}')
         
-        if save_folder:
-            print(f'Saving results to {save_folder}, shape: {embeddings.shape}')
