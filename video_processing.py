@@ -220,6 +220,7 @@ def read_embed_video(video_folder_path, n_frames=None, downsampled_frame_rate=No
     # Save output if save_folder is provided
     if save_folder:
         output_dict = {'embeddings': ALL_OUTPUT_FRAMES, 'timestamps': timestamp_array}
+        os.makedirs(save_folder, exist_ok=True)
         save_path = os.path.join(save_folder, video_folder_path.split('/')[-1]) + f'-{model_name}.pkl'
         pickle_save_dict(output_dict, save_path)
 
