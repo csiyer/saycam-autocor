@@ -10,7 +10,7 @@ from transformers import AutoImageProcessor, ResNetModel, ViTImageProcessor, ViT
 import torch
 import torch.nn.functional as F
 from joblib import Parallel, delayed
-from utils import pickle_save_dict, datetime_to_string, string_to_datetime
+from utils import pickle_save_dict, pickle_load_dict, datetime_to_string, string_to_datetime
 
 
 def get_cropping_dims(cap, square_len=420, vertical_offset=30):
@@ -255,6 +255,40 @@ def plot_frames(images, titles=None, crop_dims=None):
     plt.show()
 
 
+def concatenate_embeddings_timestamps(embeddings, timestamps, downsampled_frame_rate=3, save_path=None):
+    """
+    Our goal is to concatenate embeddings by their timestamps, so that we have one continuous (true time)
+    array of embeddings, with NaNs filled in when we have no observations.
+    Inputs:
+        - embeddings: list or array of embeddings (timepointsxdims)
+        - timestamps: list or array of timestamps of each frame (YYYYMMDD_HHMM_SSS.S)
+        ^^ these two both match the format of the pickle dicts saved by read_embed_video
+    Output:
+        - embeddings: np.array (timepointsxdims)
+        - timestamps: np.array of timestamps of each frame
+    """
+    # our goal is to create a continuous timeline from the first frame to the last, and fill in embeddings where we have them
+    
+    min_time = string_to_datetime(timestamps[0][0]) # "%Y%m%d_%H%M_%S.%f"
+    max_time = string_to_datetime(timestamps[-1][-1])
+
+    evenly_spaced_timestamps = [min_time + timedelta(seconds=i / downsampled_frame_rate) 
+                                for i in range(int((max_time - min_time).total_seconds() * downsampled_frame_rate) + 1)]
+    ground_truth_timestamps = np.array([datetime_to_string(t, truncate_digits=4) for t in evenly_spaced_timestamps]) # convert back to strings
+    # this is now our 'ground truth' timeline
+
+    # now get a new embedding list with NaNs where we don't have a matching timestamp
+    timestamp_to_embedding_map = dict(zip(np.concatenate(timestamps), np.concatenate(embeddings))) # lookup
+    ground_truth_embeddings = np.array([
+        timestamp_to_embedding_map.get(t, np.full((768,), np.nan)) for t in ground_truth_timestamps
+    ])
+
+    if save_path: 
+        pickle_save_dict({'embeddings': ground_truth_embeddings, 'timestamps': ground_truth_timestamps}, save_path)
+
+    return ground_truth_embeddings, ground_truth_timestamps
+
+
 
 if __name__ == "__main__":
     INPUT_DIR = 'videos'
@@ -285,4 +319,12 @@ if __name__ == "__main__":
             
             if save_folder:
                 print(f'Saved results to {save_folder}, shape: {embeddings.shape}')
-        
+
+    # concatenate across all embeddings into one giant thing
+    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
+    all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
+    all_embeddings, all_timestamps = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
+                                                        [d['timestamps'] for d in all_dicts],
+                                                        downsampled_frame_rate=DOWNSAMPLED_FR,
+                                                        save_path = OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')
+            

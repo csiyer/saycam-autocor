@@ -10,42 +10,11 @@ from scipy.spatial import distance
 from sklearn.metrics.pairwise import pairwise_distances
 import statsmodels.api as sm
 from joblib import Parallel, delayed
-from utils import compute_stats, pickle_load_dict, pickle_save_dict, string_to_datetime, datetime_to_string
+from utils import compute_stats, pickle_load_dict, pickle_save_dict
 
 sns.set(style='white', palette='colorblind', context='talk')
 plt.rcParams['figure.dpi'] = 200
 plt.rcParams['agg.path.chunksize'] = 10000
-
-
-def concatenate_embeddings_timestamps(embeddings, timestamps, downsampled_frame_rate=3):
-    """
-    Our goal is to concatenate embeddings by their timestamps, so that we have one continuous (true time)
-    array of embeddings, with NaNs filled in when we have no observations.
-    Inputs:
-        - embeddings: list or array of embeddings (timepointsxdims)
-        - timestamps: list or array of timestamps of each frame (YYYYMMDD_HHMM_SSS.S)
-        ^^ these two both match the format of the pickle dicts saved by read_embed_video
-    Output:
-        - embeddings: np.array (timepointsxdims)
-        - timestamps: np.array of timestamps of each frame
-    """
-    # our goal is to create a continuous timeline from the first frame to the last, and fill in embeddings where we have them
-    
-    min_time = string_to_datetime(timestamps[0][0]) # "%Y%m%d_%H%M_%S.%f"
-    max_time = string_to_datetime(timestamps[-1][-1])
-
-    evenly_spaced_timestamps = [min_time + timedelta(seconds=i / downsampled_frame_rate) 
-                                for i in range(int((max_time - min_time).total_seconds() * downsampled_frame_rate) + 1)]
-    ground_truth_timestamps = np.array([datetime_to_string(t, truncate_digits=4) for t in evenly_spaced_timestamps]) # convert back to strings
-    # this is now our 'ground truth' timeline
-
-    # now get a new embedding list with NaNs where we don't have a matching timestamp
-    timestamp_to_embedding_map = dict(zip(np.concatenate(timestamps), np.concatenate(embeddings))) # lookup
-    ground_truth_embeddings = np.array([
-        timestamp_to_embedding_map.get(t, np.full((768,), np.nan)) for t in ground_truth_timestamps
-    ])
-
-    return ground_truth_embeddings, ground_truth_timestamps
 
 
 def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
@@ -295,11 +264,7 @@ if __name__ == "__main__":
     PERMUTE_N_ITER = 10
 
     # Load embeddings if not already loaded
-    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
-    all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
-    all_embeddings, _ = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
-                                                          [d['timestamps'] for d in all_dicts],
-                                                          downsampled_frame_rate=DOWNSAMPLED_FR)
+    all_embeddings = pickle_load_dict(OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')['embeddings']
 
     # RAW AUTOCORRELATION
     _ = run_plot_acf(all_embeddings, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 
