@@ -125,7 +125,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         
     acfs_all = []
     acfs_perm_mu_se_all = []
-
+    
     for embeddings in all_embeddings: 
         if not n or n > embeddings.shape[0]:
             n = embeddings.shape[0]
