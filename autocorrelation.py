@@ -17,6 +17,35 @@ plt.rcParams['figure.dpi'] = 200
 plt.rcParams['agg.path.chunksize'] = 10000
 
 
+def plot_consec_dist(consec_dist, save_folder=None, fpath=''):
+    """Plotting helper for below"""
+    f, ax = plt.subplots(1, 1, figsize=(7, 4))
+    f.suptitle('average pairwise Euclidean distance by gap')
+    for i, (norms_mu, norms_se) in enumerate(zip(consec_dist['mu'], consec_dist['se'])):
+        mu = list(norms_mu.values())
+        se = list(norms_se.values())
+        ax.plot(mu, label=f'video {i}')
+        ax.fill_between(
+            range(len(mu)), 
+            np.array(mu) - np.array(se), 
+            np.array(mu) + np.array(se), 
+            color='gray', alpha=0.2, zorder=-99, label=f'Uncertainty' if i == 0 else None
+        )
+
+    ax.set_xticks(range(len(consec_dist['mu'][0])))  # Adjust based on the length of `mu`
+    ax.set_xticklabels(consec_dist['mu'][0].keys())  # Replace `gaps` with your labels if available
+    ax.set_xlabel('Video frame gap')
+    ax.set_ylabel('Embedding distance')
+    # ax.legend()
+    sns.despine()
+    f.tight_layout()
+
+    if save_folder:
+        plt.savefig(fpath+'.png')
+
+    plt.show()
+
+
 def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
     """ 
     gets consecutive distances between pairs of points
@@ -54,31 +83,7 @@ def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
         pickle_save_dict(consec_dist, fpath+'.pkl')
 
     if plot:
-        f, ax = plt.subplots(1, 1, figsize=(7, 4))
-        f.suptitle('average pairwise Euclidean distance by gap')
-        for i, (norms_mu, norms_se) in enumerate(zip(consec_dist['mu'], consec_dist['se'])):
-            mu = list(norms_mu.values())
-            se = list(norms_se.values())
-            ax.plot(mu, label=f'video {i}')
-            ax.fill_between(
-                range(len(mu)), 
-                np.array(mu) - np.array(se), 
-                np.array(mu) + np.array(se), 
-                color='gray', alpha=0.2, zorder=-99, label=f'Uncertainty' if i == 0 else None
-            )
-
-        ax.set_xticks(range(len(gaps)))  # Adjust based on the length of `mu`
-        # ax.set_xticklabels(gaps, rotation=90)  # Replace `gaps` with your labels if available
-        ax.set_xlabel('Video frame gap')
-        ax.set_ylabel('Embedding distance')
-        # ax.legend()
-        sns.despine()
-        f.tight_layout()
-
-        if save_folder:
-            plt.savefig(fpath+'.png')
-
-        plt.show()
+        plot_consec_dists(consec_dist, save_folder, fpath)
 
     return consec_dist
 
@@ -93,10 +98,53 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
     return acf_ndim_perm.mean(axis=0)
 
 
+def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None), 
+             plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
+             save_folder=None, fpath=''):
+    """Plotting helper for below"""
+
+    plot_title = 'Autocorrelation of embeddings, (avg across units)' if len(acfs_all) > 1 else 'Autocorrelation of familiarity timeseries' 
+    # get the timepoints to label
+    # we could've used the timepoints directly to get this, but honestly this was just easier and it doesn't matter if its a couple frames off
+    plot_timepoints_in_seconds = [int(t[:-1]) if 's' in t else int(t[:-1])*60 if 'm' in t else int(t[:-1])*3600 if 'h' in t else int(t[:-1])*86400 if 'd' in t else 0 for t in plot_timepoints]
+    frame_rate = 3
+    max_timepoint = (len(acfs_all[0]) - 1) / frame_rate # (seconds) 
+    lag_indices_to_label = [int(t * frame_rate) for t in plot_timepoints_in_seconds if t < max_timepoint]
+
+    f, ax = plt.subplots(1, 1, figsize=(8, 6))
+    f.suptitle(plot_title)
+    for i,acf in enumerate(acfs_all):
+        # Plot the ACF for the current array
+        ax.plot(acf[1:]) 
+        if len(acfs_perm_mu_se_all) > 0:
+            # Plot the permuted null mean with shaded SE
+            acf_perm_mu, acf_perm_se = acfs_perm_mu_se_all[i]
+            ax.fill_between(range(len(acf_perm_mu)), 
+                        acf_perm_mu - acf_perm_se, 
+                        acf_perm_mu + acf_perm_se, 
+                        color='gray', alpha=0.2, zorder=-99, label=f'Permuted null' if i == 0 else None)
+            
+    ax.set_xlabel('lag')
+    ax.set_ylabel('autocorrelation')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_ylim(bottom=plot_ylims[0], top=plot_ylims[1])
+    ax.set_xticks(lag_indices_to_label)
+    ax.set_xticklabels(plot_timepoints[:len(lag_indices_to_label)])
+    if len(acfs_perm_mu_se_all) > 0: ax.legend()
+    sns.despine()
+    f.tight_layout()
+
+    if save_folder:
+        plt.savefig(fpath+'.png')
+    
+    plt.show()
+
+
 # main function
 def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, 
                  plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], plot_ylims=(None,None),
-                 save_folder=None, save_tag = ''):
+                 save_folder=None, save_tag=''):
     """
     Calculates autocorrelation of data and plots!
     Inputs:
@@ -116,12 +164,8 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
     
     if all_embeddings[0].shape[1] > 1:
         print('Computing autocorrelation of raw embeddings...')
-        plot_title = f'Autocorrelation of embeddings, (avg across units; {save_tag})'
-        save_folder_addition = 'acf_raw'
     else:
         print('Computing autocorrelation of familiarity timeseries...')
-        plot_title = f'Autocorrelation of familiarity timeseries, ({save_tag})' 
-        save_folder_addition = 'acf_fn'
         
     acfs_all = []
     acfs_perm_mu_se_all = []
@@ -150,7 +194,9 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
             # acf_perm_mu_smoothed = moving_average(acf_perm_mu, w)
             acfs_perm_mu_se_all.append((acf_perm_mu, acf_perm_se))
 
+    fpath = ''
     if save_folder:
+        save_folder_addition = 'acf_raw' if len(acfs_all) > 1 else 'acf_fn'
         acf_out_dir = os.path.join(save_folder, save_folder_addition)
         os.makedirs(acf_out_dir, exist_ok=True)
         fpath = os.path.join(acf_out_dir, 'acfs_all')
@@ -158,42 +204,8 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
-        f, ax = plt.subplots(1, 1, figsize=(8, 6))
-        f.suptitle(plot_title)
-        for i,acf in enumerate(acfs_all):
-            # Plot the ACF for the current array
-            ax.plot(acf[1:]) 
-            if permute_n_iter > 0:
-                # Plot the permuted null mean with shaded SE
-                acf_perm_mu, acf_perm_se = acfs_perm_mu_se_all[i]
-                ax.fill_between(range(len(acf_perm_mu)), 
-                            acf_perm_mu - acf_perm_se, 
-                            acf_perm_mu + acf_perm_se, 
-                            color='gray', alpha=0.2, zorder=-99, label=f'Permuted null' if i == 0 else None)
-                
-        # get the timepoints to label
-        # we could've used the timepoints directly to get this, but honestly this was just easier and it doesn't matter if its a couple frames off
-        plot_timepoints_in_seconds = [int(t[:-1]) if 's' in t else int(t[:-1])*60 if 'm' in t else int(t[:-1])*3600 if 'h' in t else int(t[:-1])*86400 if 'd' in t else 0 for t in plot_timepoints]
-        frame_rate = 3
-        max_timepoint = (len(acfs_all[0]) - 1) / frame_rate # (seconds) 
-        lag_indices_to_label = [int(t * frame_rate) for t in plot_timepoints_in_seconds if t < max_timepoint]
+        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, save_folder, fpath)
 
-        ax.set_xlabel('lag')
-        ax.set_ylabel('autocorrelation')
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_ylim(bottom=plot_ylims[0], top=plot_ylims[1])
-        ax.set_xticks(lag_indices_to_label)
-        ax.set_xticklabels(plot_timepoints[:len(lag_indices_to_label)])
-        if permute_n_iter > 0: ax.legend()
-        sns.despine()
-        f.tight_layout()
-
-        if save_folder:
-            plt.savefig(fpath+'.png')
-        
-        plt.show()
-    
     return acfs_all, acfs_perm_mu_se_all
 
 
@@ -256,6 +268,7 @@ def get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs):
 if __name__ == "__main__":
     INPUT_DIR = 'videos'
     OUTPUT_DIR = 'outputs'
+    CONCATENATE_ALL = False
 
     DOWNSAMPLED_FR = 3
     MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
@@ -264,7 +277,10 @@ if __name__ == "__main__":
     PERMUTE_N_ITER = 10
 
     # Load embeddings if not already loaded
-    all_embeddings = pickle_load_dict(OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')['embeddings']
+    if CONCATENATE_ALL:
+        all_embeddings = pickle_load_dict(OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')['embeddings']
+    else:
+        all_embeddings = [pickle_load_dict(e)['embeddings'] for e in sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/[!all_embeddings]*{MODEL_NAME}*.pkl'))]
 
     # RAW AUTOCORRELATION
     _ = run_plot_acf(all_embeddings, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 

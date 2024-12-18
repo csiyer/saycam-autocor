@@ -297,7 +297,8 @@ if __name__ == "__main__":
     DOWNSAMPLED_FR = 3
     MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
     DEVICE = 'cpu' # 'cpu' or 'cuda'
-    N_JOBS = 8
+    N_JOBS = -1
+    CONCATENATE_ALL = False
 
     save_folder = os.path.join(OUTPUT_DIR, 'video_embeddings')
 
@@ -320,11 +321,12 @@ if __name__ == "__main__":
             if save_folder:
                 print(f'Saved results to {save_folder}, shape: {embeddings.shape}')
 
-    # concatenate across all embeddings into one giant thing
-    embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
-    all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
-    all_embeddings, all_timestamps = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
-                                                        [d['timestamps'] for d in all_dicts],
-                                                        downsampled_frame_rate=DOWNSAMPLED_FR,
-                                                        save_path = OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')
-            
+    if CONCATENATE_ALL:
+        # concatenate across all embeddings into one giant thing
+        embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
+        all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
+        all_embeddings, all_timestamps = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
+                                                            [d['timestamps'] for d in all_dicts],
+                                                            downsampled_frame_rate=DOWNSAMPLED_FR,
+                                                            save_path = OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')
+                
