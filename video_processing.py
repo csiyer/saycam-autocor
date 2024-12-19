@@ -307,26 +307,34 @@ if __name__ == "__main__":
 
         # each subfolder corresponds to one "video" with multiple video files within to be concatenated
         if os.path.isdir(subfolder_path):
-            print(f'Beginning video {i+1} out of {len(os.listdir(INPUT_DIR))}')
 
-            embeddings = read_embed_video(subfolder_path, 
-                                        n_frames=None, 
-                                        downsampled_frame_rate=DOWNSAMPLED_FR, 
-                                        preprocess=True, 
-                                        model_name=MODEL_NAME, 
-                                        save_folder = save_folder, 
-                                        n_jobs=N_JOBS, 
-                                        evice=DEVICE)
+            if os.path.exists(f'{save_folder}/{subfolder}-{MODEL_NAME}.pkl'):
+                print(f'File already exists for video {subfolder}, skipping...')
             
-            if save_folder:
+            else: 
+                print(f'Beginning video {i+1} out of {len(os.listdir(INPUT_DIR))}')
+                embeddings = read_embed_video(subfolder_path, 
+                                            n_frames=None, 
+                                            downsampled_frame_rate=DOWNSAMPLED_FR, 
+                                            preprocess=True, 
+                                            model_name=MODEL_NAME, 
+                                            save_folder = save_folder, 
+                                            n_jobs=N_JOBS, 
+                                            evice=DEVICE)
                 print(f'Saved results to {save_folder}, shape: {embeddings.shape}')
 
     if CONCATENATE_ALL:
-        # concatenate across all embeddings into one giant thing
-        embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
-        all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
-        all_embeddings, all_timestamps = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
-                                                            [d['timestamps'] for d in all_dicts],
-                                                            downsampled_frame_rate=DOWNSAMPLED_FR,
-                                                            save_path = OUTPUT_DIR + f'/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')
-                
+        all_embeddings_path = f'{OUTPUT_DIR}/video_embeddings/all_embeddings-{MODEL_NAME}.pkl'
+        if os.path.exists(all_embeddings_path):
+            print('Concatenated file already exists, loading...')
+            all_dict = pickle_load_dict(all_embeddings_path)
+            all_embeddings = all_dict['embeddings']
+            all_timestamps = all_dict['tiimestamps']
+        else:
+            # concatenate across all embeddings into one giant thing
+            embeddings_paths = sorted(glob.glob(OUTPUT_DIR + f'/video_embeddings/*{MODEL_NAME}*.pkl'))
+            all_dicts = [pickle_load_dict(e) for e in embeddings_paths]
+            all_embeddings, all_timestamps = concatenate_embeddings_timestamps([d['embeddings'] for d in all_dicts], 
+                                                                [d['timestamps'] for d in all_dicts],
+                                                                downsampled_frame_rate=DOWNSAMPLED_FR,
+                                                                save_path = f'{OUTPUT_DIR}/video_embeddings/all_embeddings-{MODEL_NAME}.pkl')

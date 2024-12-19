@@ -17,7 +17,7 @@ plt.rcParams['figure.dpi'] = 200
 plt.rcParams['agg.path.chunksize'] = 10000
 
 
-def plot_consec_dist(consec_dist, save_folder=None, fpath=''):
+def plot_consec_dist(consec_dist, fpath=''):
     """Plotting helper for below"""
     f, ax = plt.subplots(1, 1, figsize=(7, 4))
     f.suptitle('average pairwise Euclidean distance by gap')
@@ -37,10 +37,11 @@ def plot_consec_dist(consec_dist, save_folder=None, fpath=''):
     ax.set_xlabel('Video frame gap')
     ax.set_ylabel('Embedding distance')
     # ax.legend()
+    plt.grid(True, which="both", linestyle='--', linewidth=0.5)
     sns.despine()
     f.tight_layout()
 
-    if save_folder:
+    if fpath:
         plt.savefig(fpath+'.png')
 
     plt.show()
@@ -75,6 +76,7 @@ def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
         consec_dist['mu'].append(norms_mu)
         consec_dist['se'].append(norms_se)
 
+    fpath = None
     if save_folder:
         out_dir = os.path.join(save_folder, 'consec_dist')
         os.makedirs(out_dir, exist_ok=True)
@@ -83,7 +85,7 @@ def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
         pickle_save_dict(consec_dist, fpath+'.pkl')
 
     if plot:
-        plot_consec_dists(consec_dist, save_folder, fpath)
+        plot_consec_dist(consec_dist, fpath)
 
     return consec_dist
 
@@ -100,7 +102,7 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
 
 def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None), 
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
-             save_folder=None, fpath=''):
+             fpath=None):
     """Plotting helper for below"""
 
     plot_title = 'Autocorrelation of embeddings, (avg across units)' if len(acfs_all) > 1 else 'Autocorrelation of familiarity timeseries' 
@@ -113,9 +115,16 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
 
     f, ax = plt.subplots(1, 1, figsize=(8, 6))
     f.suptitle(plot_title)
+
+    if len(acfs_all) > 1:
+        cmap = plt.cm.viridis  # Choose your preferred colormap
+        colors = cmap(np.linspace(0, 1, len(acfs_all)))
+    else:
+        colors = ['gray']
+
     for i,acf in enumerate(acfs_all):
         # Plot the ACF for the current array
-        ax.plot(acf[1:]) 
+        ax.plot(acf[1:], color=colors[i]) #, label=f'ACF {i+1}') 
         if len(acfs_perm_mu_se_all) > 0:
             # Plot the permuted null mean with shaded SE
             acf_perm_mu, acf_perm_se = acfs_perm_mu_se_all[i]
@@ -132,10 +141,11 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
     ax.set_xticks(lag_indices_to_label)
     ax.set_xticklabels(plot_timepoints[:len(lag_indices_to_label)])
     if len(acfs_perm_mu_se_all) > 0: ax.legend()
+    plt.grid(True, which="both", linestyle='--', linewidth=0.5)
     sns.despine()
     f.tight_layout()
 
-    if save_folder:
+    if fpath:
         plt.savefig(fpath+'.png')
     
     plt.show()
@@ -194,17 +204,20 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
             # acf_perm_mu_smoothed = moving_average(acf_perm_mu, w)
             acfs_perm_mu_se_all.append((acf_perm_mu, acf_perm_se))
 
-    fpath = ''
+    fpath = None
     if save_folder:
         save_folder_addition = 'acf_raw' if len(acfs_all) > 1 else 'acf_fn'
         acf_out_dir = os.path.join(save_folder, save_folder_addition)
         os.makedirs(acf_out_dir, exist_ok=True)
-        fpath = os.path.join(acf_out_dir, 'acfs_all')
+        if len(acfs_all) > 1:
+            fpath = os.path.join(acf_out_dir, 'acfs_all')
+        else:
+            fpath = os.path.join(acf_out_dir, 'acfs_concat')
         if save_tag: fpath += '-' + save_tag
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
-        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, save_folder, fpath)
+        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath)
 
     return acfs_all, acfs_perm_mu_se_all
 
