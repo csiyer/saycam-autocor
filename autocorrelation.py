@@ -102,10 +102,14 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
 
 def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None), 
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
-             fpath=None):
+             fpath=None, raw=True):
     """Plotting helper for below"""
+    if 'raw' in fpath:
+        raw=True
+    if 'fn' in fpath:
+        raw=False
 
-    plot_title = 'Autocorrelation of embeddings, (avg across units)' if len(acfs_all) > 1 else 'Autocorrelation of familiarity timeseries' 
+    plot_title = 'Autocorrelation of embeddings, (avg across units)' if raw else 'Autocorrelation of familiarity timeseries' 
     # get the timepoints to label
     # we could've used the timepoints directly to get this, but honestly this was just easier and it doesn't matter if its a couple frames off
     plot_timepoints_in_seconds = [int(t[:-1]) if 's' in t else int(t[:-1])*60 if 'm' in t else int(t[:-1])*3600 if 'h' in t else int(t[:-1])*86400 if 'd' in t else 0 for t in plot_timepoints]
@@ -143,6 +147,13 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
     if len(acfs_perm_mu_se_all) > 0: ax.legend()
     plt.grid(True, which="both", linestyle='--', linewidth=0.5)
     sns.despine()
+
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=len(acfs_all)))
+    cbar = plt.colorbar(sm, ax=ax, orientation='vertical')
+    cbar.set_label('Session date')
+    cbar.set_ticks([0, len(acfs_all)])  
+    cbar.ax.set_yticklabels(['early', 'late']) 
+
     f.tight_layout()
 
     if fpath:
@@ -217,7 +228,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
-        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath)
+        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath, raw=all_embeddings[0].shape[1] > 1)
 
     return acfs_all, acfs_perm_mu_se_all
 
