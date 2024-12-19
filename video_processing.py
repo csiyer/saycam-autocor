@@ -212,7 +212,8 @@ def read_embed_video(video_folder_path, n_frames=None, downsampled_frame_rate=No
     #### get timepoints of each frame
     filename_only = video_folder_path[video_folder_path.rfind('/')+1:]
     start_idx = len(video_folder_path) - len(filename_only) + filename_only.find('_') # right after the first underscore (after last /) comes the date YYYYMMDD_HHMM
-    video_start_time = string_to_datetime(video_folder_path[start_idx+1:start_idx+14], pattern="%Y%m%d_%H%M")
+    # THE VIDEOS DO NOT HAVE TIMES, ONLY DATES -- we will mark them as just starting at midnight
+    video_start_time = string_to_datetime(video_folder_path[start_idx+1:start_idx+9], pattern="%Y%m%d")
 
     datetime_array = [video_start_time + timedelta(seconds=i / frame_rate) for i in range(len(ALL_OUTPUT_FRAMES))]
     timestamp_array = np.array([datetime_to_string(t, truncate_digits=4) for t in datetime_array])
