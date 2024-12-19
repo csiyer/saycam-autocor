@@ -19,12 +19,25 @@ plt.rcParams['agg.path.chunksize'] = 10000
 
 def plot_consec_dist(consec_dist, fpath=''):
     """Plotting helper for below"""
+
     f, ax = plt.subplots(1, 1, figsize=(7, 4))
     f.suptitle('average pairwise Euclidean distance by gap')
+
+    if len(consec_dist['mu']) > 1:
+        cmap = plt.cm.viridis  # Choose your preferred colormap
+        colors = cmap(np.linspace(0, 1, len(consec_dist['mu'])))
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=len(consec_dist['mu'])))
+        cbar = plt.colorbar(sm, ax=ax, orientation='vertical')
+        cbar.set_label('Session date')
+        cbar.set_ticks([0, len(consec_dist['mu'])])  
+        cbar.ax.set_yticklabels(['early', 'late']) 
+    else:
+        colors = ['gray']
+    
     for i, (norms_mu, norms_se) in enumerate(zip(consec_dist['mu'], consec_dist['se'])):
         mu = list(norms_mu.values())
         se = list(norms_se.values())
-        ax.plot(mu, label=f'video {i}')
+        ax.plot(mu, label=f'video {i}', color=colors[i])
         ax.fill_between(
             range(len(mu)), 
             np.array(mu) - np.array(se), 
@@ -121,8 +134,13 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
     f.suptitle(plot_title)
 
     if len(acfs_all) > 1:
-        cmap = plt.cm.viridis  # Choose your preferred colormap
+        cmap = plt.cm.viridis  
         colors = cmap(np.linspace(0, 1, len(acfs_all)))
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=len(acfs_all)))
+        cbar = plt.colorbar(sm, ax=ax, orientation='vertical')
+        cbar.set_label('Session date')
+        cbar.set_ticks([0, len(acfs_all)])  
+        cbar.ax.set_yticklabels(['early', 'late']) 
     else:
         colors = ['gray']
 
@@ -147,13 +165,6 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
     if len(acfs_perm_mu_se_all) > 0: ax.legend()
     plt.grid(True, which="both", linestyle='--', linewidth=0.5)
     sns.despine()
-
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=len(acfs_all)))
-    cbar = plt.colorbar(sm, ax=ax, orientation='vertical')
-    cbar.set_label('Session date')
-    cbar.set_ticks([0, len(acfs_all)])  
-    cbar.ax.set_yticklabels(['early', 'late']) 
-
     f.tight_layout()
 
     if fpath:
