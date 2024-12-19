@@ -117,9 +117,9 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
              fpath=None, raw_bool=True, save_tag=''):
     """Plotting helper for below"""
-    if 'raw' in fpath:
+    if fpath and 'raw' in fpath:
         raw_bool=True
-    if 'fn' in fpath:
+    if fpath and 'fn' in fpath:
         raw_bool=False
 
     plot_title = 'Autocorrelation of embeddings, (avg across units)' if raw_bool else 'Autocorrelation of familiarity timeseries' 
