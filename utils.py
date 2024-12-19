@@ -42,6 +42,7 @@ def compute_stats(arr, axis=0, n_se=2, use_se=True):
 
 #####  my own
 from datetime import datetime, timedelta
+from scipy.optimize import curve_fit
 
 # wrappers for datetime.strftime and strptime for our specific format
 
@@ -52,3 +53,20 @@ def datetime_to_string(date, pattern ="%Y%m%d_%H%M_%S.%f", truncate_digits=None)
     if truncate_digits:
         return datetime.strftime(date, pattern)[:-truncate_digits]
     return datetime.strftime(date, pattern)
+
+# fitting power law and exponential curves
+def fit_acf(acf_data, model):
+    if model.lower() == 'power law':
+        fit_function = lambda x,a,b: a * x**(b)
+    elif model.lower() == 'truncated power law':
+        fit_function = lambda x,a,b: x**a * np.exp(b * x) 
+    elif model.lower() == 'exponential':
+        fit_function = lambda x,a,b: a * np.exp(b * x) 
+    elif model.lower() == 'stretched_exponential':
+        fit_function = lambda x,a,b: np.exp(a * x**b)
+    elif model.lower() == 'lognormal':
+        fit_function = lambda x,a,b: np.exp(a * x**b)
+
+    x = np.arange(1, len(acf_data)+1)
+    params = curve_fit(fit_function, x, acf_data)
+    return fit_function(x, *params)
