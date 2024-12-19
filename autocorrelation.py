@@ -115,14 +115,14 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
 
 def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None), 
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
-             fpath=None, raw=True):
+             fpath=None, raw_bool=True):
     """Plotting helper for below"""
     if 'raw' in fpath:
-        raw=True
+        raw_bool=True
     if 'fn' in fpath:
-        raw=False
+        raw_bool=False
 
-    plot_title = 'Autocorrelation of embeddings, (avg across units)' if raw else 'Autocorrelation of familiarity timeseries' 
+    plot_title = 'Autocorrelation of embeddings, (avg across units)' if raw_bool else 'Autocorrelation of familiarity timeseries' 
     # get the timepoints to label
     # we could've used the timepoints directly to get this, but honestly this was just easier and it doesn't matter if its a couple frames off
     plot_timepoints_in_seconds = [int(t[:-1]) if 's' in t else int(t[:-1])*60 if 'm' in t else int(t[:-1])*3600 if 'h' in t else int(t[:-1])*86400 if 'd' in t else 0 for t in plot_timepoints]
@@ -194,7 +194,8 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
     if not type(all_embeddings) == list:
         all_embeddings = [all_embeddings] # make this compatible with a single continuous embeddings file or list of files
     
-    if all_embeddings[0].shape[1] > 1:
+    raw_bool = all_embeddings[0].shape[1] > 1
+    if raw_bool:
         print('Computing autocorrelation of raw embeddings...')
     else:
         print('Computing autocorrelation of familiarity timeseries...')
@@ -228,7 +229,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
 
     fpath = None
     if save_folder:
-        save_folder_addition = 'acf_raw' if len(acfs_all) > 1 else 'acf_fn'
+        save_folder_addition = 'acf_raw' if raw_bool else 'acf_fn'
         acf_out_dir = os.path.join(save_folder, save_folder_addition)
         os.makedirs(acf_out_dir, exist_ok=True)
         if len(acfs_all) > 1:
@@ -239,7 +240,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
-        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath, raw=all_embeddings[0].shape[1] > 1)
+        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath, raw_bool=raw_bool)
 
     return acfs_all, acfs_perm_mu_se_all
 
