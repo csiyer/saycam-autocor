@@ -115,7 +115,7 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
 
 def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None), 
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
-             fpath=None, raw_bool=True):
+             fpath=None, raw_bool=True, save_tag=''):
     """Plotting helper for below"""
     if 'raw' in fpath:
         raw_bool=True
@@ -123,6 +123,7 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], plot_ylims=(None, None),
         raw_bool=False
 
     plot_title = 'Autocorrelation of embeddings, (avg across units)' if raw_bool else 'Autocorrelation of familiarity timeseries' 
+    plot_title += f' ({save_tag})'
     # get the timepoints to label
     # we could've used the timepoints directly to get this, but honestly this was just easier and it doesn't matter if its a couple frames off
     plot_timepoints_in_seconds = [int(t[:-1]) if 's' in t else int(t[:-1])*60 if 'm' in t else int(t[:-1])*3600 if 'h' in t else int(t[:-1])*86400 if 'd' in t else 0 for t in plot_timepoints]
@@ -240,7 +241,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
-        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath, raw_bool=raw_bool)
+        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath, raw_bool=raw_bool, save_tag=save_tag)
 
     return acfs_all, acfs_perm_mu_se_all
 
