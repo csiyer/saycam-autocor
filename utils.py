@@ -56,9 +56,9 @@ def datetime_to_string(date, pattern ="%Y%m%d_%H%M_%S.%f", truncate_digits=None)
 
 # fitting power law and exponential curves
 def fit_acf(acf_data, model):
-    if model.lower() == 'power law':
+    if model.lower() == 'power_law':
         fit_function = lambda x,a,b: a * x**(b)
-    elif model.lower() == 'truncated power law':
+    elif model.lower() == 'truncated_power_law':
         fit_function = lambda x,a,b: x**a * np.exp(b * x) 
     elif model.lower() == 'exponential':
         fit_function = lambda x,a,b: a * np.exp(b * x) 
