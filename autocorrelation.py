@@ -7,10 +7,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial import distance
+from scipy.stats import linregress
 from sklearn.metrics.pairwise import pairwise_distances
 import statsmodels.api as sm
 from joblib import Parallel, delayed
-from utils import compute_stats, pickle_load_dict, pickle_save_dict, fit_acf
+from utils import compute_stats, pickle_load_dict, pickle_save_dict
 
 sns.set(style='white', palette='colorblind', context='talk')
 plt.rcParams['figure.dpi'] = 200
@@ -113,7 +114,7 @@ def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'
     return acf_ndim_perm.mean(axis=0)
 
 
-def plot_acf(acfs_all, acfs_perm_mu_se_all=[], model_fits=[], plot_ylims=(None, None), 
+def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(None, None), 
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
              fpath=None, raw_bool=True, average=False, save_tag=''):
     """Plotting helper for below"""
@@ -149,7 +150,8 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], model_fits=[], plot_ylims=(None, 
         acfs_all = [np.mean(acfs_all, axis=0)]
     for i,acf in enumerate(acfs_all):
         # Plot the ACF for the current array
-        ax.plot(acf[1:], color=colors[i], label='Data') #, label=f'ACF {i+1}') 
+        ax.plot(acf[1:], color=colors[i], label='Data') #, label=f'ACF {i+1}')
+
         if len(acfs_perm_mu_se_all) > 0:
             # Plot the permuted null mean with shaded SE
             acf_perm_mu, acf_perm_se = acfs_perm_mu_se_all[i]
@@ -157,14 +159,15 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], model_fits=[], plot_ylims=(None, 
                         acf_perm_mu - acf_perm_se, 
                         acf_perm_mu + acf_perm_se, 
                         color='gray', alpha=0.2, zorder=-99, label=f'Permuted null' if i == 0 else None)
-            
-        for model in model_fits: # usually ['power_law', 'exponential'] 
+        if fit_powerlaw:
+            # power law is just a linear regression on a log-log scale
             acf_limited = acf[acf > plot_ylims[0]][1:]
-            try:
-                fit_data = fit_acf(acf_limited, model)
-                plt.plot(fit_data, linestyle='--', alpha=0.7, label=model)
-            except:
-                print('Failed to fit:', model)
+            x = np.log(np.arange(1, len(acf_limited)+1))
+            y = np.log(acf_limited)
+            slope, intercept, r, p, std_err = linregress(x,y)
+            lm = x*slope+intercept
+            # ax.scatter(np.exp(x), acf_limited, color=colors[i], label='Data')
+            ax.plot(np.exp(x), np.exp(lm), color='r', linestyle='--', label='Power law fit')
 
     ax.set_xlabel('lag')
     ax.set_ylabel('autocorrelation')
@@ -173,7 +176,7 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], model_fits=[], plot_ylims=(None, 
     ax.set_ylim(bottom=plot_ylims[0], top=plot_ylims[1])
     ax.set_xticks(lag_indices_to_label)
     ax.set_xticklabels(plot_timepoints[:len(lag_indices_to_label)])
-    if len(acfs_perm_mu_se_all) > 0 or len(model_fits) > 0: ax.legend()
+    if len(acfs_perm_mu_se_all) > 0 or fit_powerlaw: ax.legend()
     plt.grid(True, which="both", linestyle='--', linewidth=0.5)
     sns.despine()
     f.tight_layout()
