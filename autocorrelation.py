@@ -164,10 +164,14 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(N
             acf_limited = acf[acf > plot_ylims[0]][1:]
             x = np.log(np.arange(1, len(acf_limited)+1))
             y = np.log(acf_limited)
-            slope, intercept, r, p, std_err = linregress(x,y)
-            lm = x*slope+intercept
+            try:
+                slope, intercept, r, p, std_err = linregress(x,y)
+                lm = x*slope+intercept
+                ax.plot(np.exp(x), np.exp(lm), color='r', linestyle='--', label='Power law fit' if i==0 else None)
+            except:
+                pass
             # ax.scatter(np.exp(x), acf_limited, color=colors[i], label='Data')
-            ax.plot(np.exp(x), np.exp(lm), color='r', linestyle='--', label='Power law fit' if i==0 else None)
+            
 
     ax.set_xlabel('lag')
     ax.set_ylabel('autocorrelation')
