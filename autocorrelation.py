@@ -150,7 +150,7 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(N
         acfs_all = [np.mean(acfs_all, axis=0)]
     for i,acf in enumerate(acfs_all):
         # Plot the ACF for the current array
-        ax.plot(acf[1:], color=colors[i], label='Data') #, label=f'ACF {i+1}')
+        ax.plot(acf[1:], color=colors[i], label='Data' if fit_powerlaw and i == 0 else None) #, label=f'ACF {i+1}')
 
         if len(acfs_perm_mu_se_all) > 0:
             # Plot the permuted null mean with shaded SE
@@ -167,7 +167,7 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(N
             slope, intercept, r, p, std_err = linregress(x,y)
             lm = x*slope+intercept
             # ax.scatter(np.exp(x), acf_limited, color=colors[i], label='Data')
-            ax.plot(np.exp(x), np.exp(lm), color='r', linestyle='--', label='Power law fit')
+            ax.plot(np.exp(x), np.exp(lm), color='r', linestyle='--', label='Power law fit' if i==0 else None)
 
     ax.set_xlabel('lag')
     ax.set_ylabel('autocorrelation')
