@@ -104,19 +104,56 @@ def get_consec_dists(all_embeddings, plot=True, save_folder=None, save_tag=''):
     return consec_dist
 
 
+# two main autocorrelation functions
 def compute_acf_across_dims(embeddings, nlags, perm=None, missing='conservative'):
+    """This function computes a lagged autocorrelation for each model unit and then averages across model dimensions"""
     if len(embeddings.shape) < 2:
         embeddings = embeddings[:,np.newaxis]
-    dim = embeddings.shape[1]
+    ndims = embeddings.shape[1]
     if perm is not None:
-        embeddings = embeddings[perm]
-    acf_ndim_perm = np.array([sm.tsa.acf(embeddings[:, d], nlags=nlags, missing=missing) for d in range(dim)])
-    return acf_ndim_perm.mean(axis=0)
+        embeddings = embeddings[perm] # if a permutation is provided, shuffle the values before computing
+    acf_out = np.array([sm.tsa.acf(embeddings[:, d], nlags=nlags, missing=missing) for d in range(ndims)])
+    return acf_out.mean(axis=0) # average across model units
+
+def compute_pairwise_correlations(embeddings, nlags, perm=None):
+    """Different type of ACF: this function computes timepoint-by-timepoint correlations of model unit vectors"""
+    if perm is not None:
+        embeddings = embeddings[perm] # if a permutation is provided, shuffle the values before computing
+    corr_matrix = np.corrcoef(embeddings)
+    avg_correlations = np.zeros(nlags)
+    for lag in range(nlags):
+        pairwise_correlations = np.diag(corr_matrix, k=lag)
+        avg_correlations[lag] = np.nanmean(pairwise_correlations)
+    return avg_correlations
+
+
+def fit_pl(data, uniform_log = False):
+    """
+    fit a linear regression in the log-log scale (i.e. power law
+    if uniform_log is passed, the points are resampled to be uniform on a log scale (otherwise we have much more data as x increases)
+    returns:
+        - x and y data for plotting
+        - slope and intercept
+    """
+    x_raw = np.arange(1, len(data)+1)
+    if uniform_log:
+        x_to_fit = np.logspace(np.log10(x_raw[0]), np.log10(x_raw[-1]), 100) # sample x's evenly on log scale
+        y_to_fit = np.log10( np.interp(x_to_fit, x_raw, data) ) # linear interpolation of y's for fitting linear regression
+        x_to_fit = np.log10(x_to_fit) # put x's back on log scale to fit line
+    else: # just use raw data
+        x_to_fit = np.log10(x_raw)
+        y_to_fit = np.log10(data)
+    try: # sometimes weird errors
+        slope, intercept, r, p, std_err = linregress(x_to_fit, y_to_fit)
+        lm = x_to_fit * slope + intercept 
+        return 10**x_to_fit, 10**lm, slope, intercept
+    except:
+        return None
 
 
 def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(None, None), 
              plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
-             fpath=None, raw_bool=True, average=False, save_tag=''):
+             fpath=None, average=False, save_tag=''):
     """Plotting helper for below"""
     if fpath and 'raw' in fpath:
         raw_bool=True
@@ -148,29 +185,25 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(N
 
     if average and len(acfs_all) > 1:
         acfs_all = [np.mean(acfs_all, axis=0)]
+        
     for i,acf in enumerate(acfs_all):
         # Plot the ACF for the current array
-        ax.plot(np.arange(1, len(acf)), acf[1:], color=colors[i], label='Data' if fit_powerlaw and i == 0 else None) #, label=f'ACF {i+1}')
+        acf_limited = acf[acf>plot_ylims[0]][1:] if plot_ylims[0] else acf[1:] # cut off if y_lim provided
+        ax.plot(np.arange(1,len(acf_limited)+1), acf_limited, color=colors[i], label='Data' if fit_powerlaw and i == 0 else None) #, label=f'ACF {i+1}')
 
         if len(acfs_perm_mu_se_all) > 0:
             # Plot the permuted null mean with shaded SE
             acf_perm_mu, acf_perm_se = acfs_perm_mu_se_all[i]
-            ax.fill_between(range(len(acf_perm_mu)), 
+            acf_perm_mu = acf_perm_mu[acf>plot_ylims[0]][1:] if plot_ylims[0] else acf_perm_mu[1:] # cut off if ylim provided
+            acf_perm_se = acf_perm_se[acf>plot_ylims[0]][1:] if plot_ylims[0] else acf_perm_se[1:]
+            ax.fill_between(np.arange(1,len(acf_limited)+1), 
                         acf_perm_mu - acf_perm_se, 
                         acf_perm_mu + acf_perm_se, 
                         color='gray', alpha=0.2, zorder=-99, label=f'Permuted null' if i == 0 else None)
         if fit_powerlaw:
-            # power law is just a linear regression on a log-log scale
-            acf_limited = acf[acf > plot_ylims[0]][1:]
-            x = np.log(np.arange(1, len(acf_limited)+1))
-            y = np.log(acf_limited)
-            try:
-                slope, intercept, r, p, std_err = linregress(x,y)
-                lm = x*slope+intercept
-                ax.plot(np.exp(x), np.exp(lm), color='r', linestyle='--', label='Power law fit' if i==0 else None)
-            except:
-                pass
-            # ax.scatter(np.exp(x), acf_limited, color=colors[i], label='Data')
+            # if fit_powerlaw:
+            lm_x, lm_y, slope, intercept = fit_pl(data=acf[acf>0.1][1:], uniform_log=True)
+            ax.plot(lm_x, lm_y, color='r', linestyle='--', label='Power law fit' if i==0 else None)
             
 
     ax.set_xlabel('lag')
@@ -192,16 +225,15 @@ def plot_acf(acfs_all, acfs_perm_mu_se_all=[], fit_powerlaw=False, plot_ylims=(N
 
 
 # main function
-def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1, plot=True, 
-                 plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], plot_ylims=(None,None),
-                 save_folder=None, save_tag=''):
+def run_plot_acf(all_embeddings, acf_type='pairwise', permute_n_iter=0, n_jobs=1, 
+                 plot=True, plot_timepoints=['1s','10s','1m','10m','1h','10h','1d','10d'], 
+                 plot_ylims=(None,None), save_folder=None, save_tag=''):
     """
     Calculates autocorrelation of data and plots!
     Inputs:
         - all_embeddings: list of np.array embeddings of length n_videos and each element shape (timepoints, dims) 
                 For the familiarity-novelty timeseries, dims=1 -- still works!
-        - n: number of timepoints to consider
-        - nlags: lags of the autocorrelation function
+        - acf_type: 'pairwise' for correlating model unit arrays at each timepoint, 'dim_avg' for ACF for each model unit and then average across units
         - permute_n_iter: compute a permuted null by shuffling and recomputing ACF 
         - n_jobs: number of jobs to parallelize across
         - bool to plot
@@ -212,6 +244,11 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
     if not type(all_embeddings) == list:
         all_embeddings = [all_embeddings] # make this compatible with a single continuous embeddings file or list of files
     
+    if acf_type=='dim_avg':
+        acf_fxn_to_use = compute_acf_across_dims
+    elif acf_type=='pairwise':
+        acf_fxn_to_use = compute_pairwise_correlations
+
     raw_bool = all_embeddings[0].shape[1] > 1
     if raw_bool:
         print('Computing autocorrelation of raw embeddings...')
@@ -222,22 +259,19 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
     acfs_perm_mu_se_all = []
     
     for embeddings in all_embeddings: 
-        if not n or n > embeddings.shape[0]:
-            n = embeddings.shape[0]
-        if not nlags or nlags > n:
-            nlags = n // 2 # reasonable default?
-
+        n = embeddings.shape[0]
+        nlags = n//2 # reasonable defualt?
         embeddings = embeddings[:n] # now (n x dim)
 
         # calculate autocorrelation of each model unit and average
-        acf = compute_acf_across_dims(embeddings, nlags)
+        acf = acf_fxn_to_use(embeddings, nlags)
         acfs_all.append(acf)
 
         if permute_n_iter > 0:
             # permute the embedding units and compute autocrrelation 
             acf_perm = np.array(
                 Parallel(n_jobs=n_jobs)(
-                    delayed(compute_acf_across_dims)(embeddings, nlags, perm=np.random.permutation(n)) for _ in range(permute_n_iter)
+                    delayed(acf_fxn_to_use)(embeddings, nlags, perm=np.random.permutation(n)) for _ in range(permute_n_iter)
                 )
             )
             acf_perm_mu, acf_perm_se = compute_stats(acf_perm, axis=0)
@@ -258,7 +292,7 @@ def run_plot_acf(all_embeddings,  n=None, nlags=None, permute_n_iter=0, n_jobs=1
         pickle_save_dict({'acfs_all': acfs_all, 'acfs_perm_mu_se_all': acfs_perm_mu_se_all}, fpath+'.pkl')
         
     if plot:
-        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims, plot_timepoints, fpath, raw_bool=raw_bool, save_tag=save_tag)
+        plot_acf(acfs_all, acfs_perm_mu_se_all, plot_ylims=plot_ylims, plot_timepoints=plot_timepoints, fpath=fpath, save_tag=save_tag)
 
     return acfs_all, acfs_perm_mu_se_all
 
@@ -321,13 +355,13 @@ def get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs):
 
 if __name__ == "__main__":
     INPUT_DIR = 'videos'
-    OUTPUT_DIR = 'outputs'
+    OUTPUT_DIR = 'outputs-axon'
     CONCATENATE_ALL = False
 
     DOWNSAMPLED_FR = 3
     MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
     DEVICE = 'cpu' # 'cpu' or 'cuda'
-    N_JOBS = 8
+    N_JOBS = -1
     PERMUTE_N_ITER = 10
 
     # Load embeddings if not already loaded
@@ -338,7 +372,7 @@ if __name__ == "__main__":
 
     # RAW AUTOCORRELATION
     _ = run_plot_acf(all_embeddings, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 
-                     plot_ylims=(1e-7,None), save_folder=OUTPUT_DIR, save_tag=MODEL_NAME)
+                     plot_ylims=(None,None), save_folder=OUTPUT_DIR, save_tag=MODEL_NAME)
 
 
     # PAIRWISE DISTANCES
@@ -347,8 +381,6 @@ if __name__ == "__main__":
     # FAMILIARITY/NOVELTY AUTOCORRELATION
     for gap in [2, 8, 32, 128]:
         familiarity_ts = get_familiarity_timeseries(all_embeddings, consec_dist, gap, n_jobs=N_JOBS)
-        _ = run_plot_acf(familiarity_ts,  n=None, nlags=None, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, 
-                        plot=True, save_folder=OUTPUT_DIR, save_tag = f'{MODEL_NAME}-gap{gap}')
-
-
-
+        _ = run_plot_acf(familiarity_ts, permute_n_iter=PERMUTE_N_ITER, n_jobs=N_JOBS, plot=True, 
+                         save_folder=OUTPUT_DIR, save_tag = f'{MODEL_NAME}-gap{gap}')
+        

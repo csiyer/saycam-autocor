@@ -293,7 +293,7 @@ def concatenate_embeddings_timestamps(embeddings, timestamps, downsampled_frame_
 
 if __name__ == "__main__":
     INPUT_DIR = 'videos'
-    OUTPUT_DIR = 'outputs'
+    OUTPUT_DIR = 'outputs-axon'
 
     DOWNSAMPLED_FR = 3
     MODEL_NAME = 'vit' # 'vit' or 'resnet' # respectively, these will make 768-D or 2048-D embeddings
