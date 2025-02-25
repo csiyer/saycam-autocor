@@ -7,7 +7,7 @@ fonttools==4.54.1
 fsspec==2024.10.0
 huggingface-hub==0.26.2
 idna==3.10
-Jinja2==3.1.4
+Jinja2==3.1.5
 joblib==1.4.2
 kiwisolver==1.4.7
 MarkupSafe==3.0.2
@@ -35,7 +35,7 @@ threadpoolctl==3.5.0
 tokenizers==0.20.3
 torch==2.5.1
 tqdm==4.67.0
-transformers==4.46.2
+transformers==4.48.0
 tzdata==2024.2
 urllib3==2.2.3
 wheel==0.44.0
