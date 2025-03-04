@@ -18,7 +18,7 @@ importlib_metadata @ file:///home/conda/feedstock_root/build_artifacts/importlib
 ipykernel @ file:///Users/runner/miniforge3/conda-bld/ipykernel_1719845458456/work
 ipython @ file:///home/conda/feedstock_root/build_artifacts/ipython_1729866374957/work
 jedi @ file:///home/conda/feedstock_root/build_artifacts/jedi_1731317204262/work
-Jinja2==3.1.4
+Jinja2==3.1.5
 joblib==1.4.2
 jupyter_client @ file:///home/conda/feedstock_root/build_artifacts/jupyter_client_1726610684920/work
 jupyter_core @ file:///home/conda/feedstock_root/build_artifacts/jupyter_core_1727163409502/work
@@ -66,7 +66,7 @@ torch==2.5.1
 tornado @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_a4w03z48br/croot/tornado_1718740114858/work
 tqdm==4.67.0
 traitlets @ file:///home/conda/feedstock_root/build_artifacts/traitlets_1713535121073/work
-transformers==4.46.2
+transformers==4.48.0
 typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1717802530399/work
 tzdata==2024.2
 urllib3==2.2.3
